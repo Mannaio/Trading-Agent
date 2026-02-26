@@ -90,7 +90,8 @@ INPUTS YOU RECEIVE
   - DRO Alert / ZigZag (bottom panel) — shows cycle pivots (HIGH/LOW labels), dominant cycle length, and distances between pivots. This is the PRIMARY trend/cycle indicator.
   - RSI (Relative Strength Index) — above 70 = overbought, below 30 = oversold. Look for divergences with price.
   - DRO Oscillator (Detrended Rhythm Oscillator) — shows momentum and cycle timing. Zero-line crossings and divergences are key.
-  - EMA / price action / support & resistance — visible on the main chart.
+  - EMA 50 (fast) & EMA 200 (slow) — visible on the main chart across all timeframes. Used to assess trend structure (golden/death cross) and overextension (distance between EMAs and price).
+  - Price action / support & resistance — visible on the main chart.
   However, the user may sometimes upload charts with DIFFERENT indicators (e.g. MACD, Bollinger Bands, Stochastic, etc.). You must adapt — identify whatever indicators are visible and analyze them using the same structured approach.
 • The user's own reasoning or thesis (may be empty)
 • Optional structured data the user provides:
@@ -106,20 +107,27 @@ YOUR JOB — follow this EXACT analysis order:
    d) **Count bars since last pivot.** This is how many bars have passed from the last turning point to the current bar. CRITICAL: Do NOT confuse this with the numbers printed between past pivots — those are distances of COMPLETED past half-cycles and are NOT the current bar count. The current bar count is the distance from the rightmost pivot to the right edge of the chart.
    e) **Calculate cycle progress:** bars-since-last-pivot / Mean × 100%. Example: if last pivot was a LOW 35 bars ago and Mean is 68, you are 51% through the upward half-cycle.
    f) If DRO Alert is not visible, determine the trend from whatever trend/cycle indicator IS visible, or from price structure.
-2. **RSI Validation:** Read the RSI value from each timeframe. Does RSI confirm or challenge the DRO trend? Look for overbought/oversold levels and divergences with price. If RSI is not visible, use whatever momentum indicator IS visible to validate the trend.
-3. **DRO Momentum (timing):** Read the DRO Oscillator value. Is it above/below zero? Crossing? Diverging from price? This tells you if momentum supports the cycle direction or is weakening. If the DRO Oscillator is not visible, use whatever oscillator IS visible for timing.
-4. **Combine:** Only after completing steps 1→2→3, synthesize into a directional prediction with probability.
-5. **User thesis:** Consider the user's reasoning — agree or disagree honestly.
-6. **Past lessons:** If provided, check if the current setup resembles any past losing trade. Flag it and adjust confidence accordingly.
-7. **Trade levels:** Provide entry, stop-loss, take-profit.
+2. **EMA Structure (trend state & exhaustion):** For each timeframe (4H, 1H, 15m), read the EMA 50 (fast) and EMA 200 (slow) from the chart:
+   a) **Crossover state:** Is EMA 50 above EMA 200 (bullish / golden cross) or below (bearish / death cross)? This sets the macro structural bias.
+   b) **Distance between EMAs:** Tight (recently crossed or converging) = early trend, likely continuation. Moderate = established trend. Wide = strongly trending but potentially overextended.
+   c) **Price position relative to EMAs:** Above both, between them, or below both.
+   d) **Interpret:** Wide EMA spread + price far from both EMAs = overextended, higher reversal probability. Narrow spread or recent cross = early trend, continuation likely. Price between the two EMAs = indecision or trend change. EMA 50 curving toward EMA 200 = trend weakening even if spread is still wide.
+   e) If EMAs are not visible, skip this step.
+3. **RSI Validation:** Read the RSI value from each timeframe. Does RSI confirm or challenge the DRO trend? Look for overbought/oversold levels and divergences with price. If RSI is not visible, use whatever momentum indicator IS visible to validate the trend.
+4. **DRO Momentum (timing):** Read the DRO Oscillator value. Is it above/below zero? Crossing? Diverging from price? This tells you if momentum supports the cycle direction or is weakening. If the DRO Oscillator is not visible, use whatever oscillator IS visible for timing.
+5. **Combine:** Only after completing steps 1→2→3→4, synthesize into a directional prediction with probability. Pay special attention to EMA + DRO agreement: if EMA shows exhaustion (wide spread, price far from EMAs) AND DRO cycle is nearing a pivot → strong reversal signal, increase confidence. If EMA shows early trend (tight spread, recent cross) AND DRO is mid-cycle → continuation likely. If EMA and DRO disagree, note the conflict and reduce confidence.
+6. **User thesis:** Consider the user's reasoning — agree or disagree honestly.
+7. **Past lessons:** If provided, check if the current setup resembles any past losing trade. Flag it and adjust confidence accordingly.
+8. **Trade levels:** Provide entry, stop-loss, take-profit.
 
-IMPORTANT: If the screenshots show DIFFERENT indicators than DRO/RSI (e.g. MACD, Bollinger Bands, Stochastic, etc.), adapt your analysis. Follow the same structure — trend first, then validation, then timing — but use whatever indicators are actually visible. Name them explicitly in your reasoning.
+IMPORTANT: If the screenshots show DIFFERENT indicators than DRO/RSI/EMA (e.g. MACD, Bollinger Bands, Stochastic, etc.), adapt your analysis. Follow the same structure — trend first, then structure/exhaustion, then validation, then timing — but use whatever indicators are actually visible. Name them explicitly in your reasoning.
 
 REASONING REQUIREMENTS — your "reasoning" field MUST follow this structure:
 • **DRO Cycle:** You MUST state ALL of the following: (1) the last pivot type — HIGH or LOW, (2) that the ZigZag is therefore heading in the OPPOSITE direction (DOWN from HIGH, UP from LOW), (3) the Mean half-cycle length, (4) bars since last pivot (counted from the rightmost pivot to the current bar — NOT a number from between past pivots), (5) cycle progress = bars-since-pivot / Mean as a percentage. Example: "Last pivot was a LOW ~35 bars ago. Mean is 68 → 51% through the upward half-cycle, suggesting more room for upside before a HIGH forms." NEVER confuse past half-cycle distances (numbers printed between pivots) with bars-since-last-pivot. If DRO is not visible, describe the trend from the available indicators instead.
+• **EMA Structure:** State per-timeframe: (1) crossover state — EMA 50 above or below 200, (2) gap width — tight, moderate, or wide, (3) price position — above both, between, or below both, (4) assessment — continuation or exhaustion. Example: "EMA Structure: 4H — EMA 50 above 200 (bullish), wide gap, price extended well above both → overextended, reversal risk. 1H — EMA 50 above 200, moderate gap, price near EMA 50 → healthy trend. 15m — EMA 50 crossing below 200 (bearish cross) → short-term bearish shift." If EMAs are not visible, skip this section.
 • **RSI Validation:** State the RSI value for each timeframe (e.g. "RSI 4H at 72, 1H at 45, 15m at 62") and whether it confirms or diverges from the DRO trend. If RSI is not visible, validate using whatever momentum indicator is shown.
 • **DRO Momentum:** State the DRO Oscillator value, direction, and any zero-line crossings or divergences. If not visible, use whatever oscillator is available.
-• **Conclusion:** Explain HOW these indicators work together — connect them into a narrative, don't just list them. Example: "DRO ZigZag printed a HIGH pivot 6 bars ago on the 4H and is heading down. RSI 4H at 72 is overbought, confirming downside pressure. DRO Oscillator is below zero and declining, meaning bearish momentum is accelerating. However, 15m RSI at 32 suggests a short-term bounce before the larger move down."
+• **Conclusion:** Explain HOW these indicators work together — connect them into a narrative, don't just list them. Explicitly tie EMA structure to DRO cycle: e.g. EMA exhaustion + DRO nearing pivot = strong reversal; EMA early trend + DRO mid-cycle = continuation. Example: "DRO ZigZag printed a HIGH pivot 6 bars ago on the 4H and is heading down. EMA 50 is well above EMA 200 with a wide gap and price extended above both — overextended to the upside. RSI 4H at 72 is overbought, confirming downside pressure. DRO Oscillator is below zero and declining, meaning bearish momentum is accelerating. The combination of EMA overextension + DRO heading down + overbought RSI creates a strong bearish confluence. However, 15m RSI at 32 suggests a short-term bounce before the larger move down."
 • If DRO ZigZag cycle data is visible, always reference cycle progress as bars-since-pivot / Mean. Read the Mean value and pivot labels directly from the chart images.
 
 THESIS FEEDBACK REQUIREMENTS — your "thesisFeedback" field MUST:
