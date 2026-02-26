@@ -1,0 +1,12 @@
+name = "trading-agent-api"
+main = "src/index.ts"
+compatibility_date = "2024-11-01"
+
+[vars]
+# Non-secret environment variables can go here
+
+# For local development, create a .dev.vars file with:
+# OPENAI_API_KEY=sk-...
+
+# For production, set the secret via:
+# npx wrangler secret put OPENAI_API_KEY

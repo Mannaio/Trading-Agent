@@ -1,0 +1,4 @@
+# Copy this file to .dev.vars and add your OpenAI API key
+# DO NOT commit .dev.vars to version control
+
+OPENAI_API_KEY=sk-your-api-key-here
