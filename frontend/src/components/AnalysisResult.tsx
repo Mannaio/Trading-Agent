@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, memo, useCallback, useMemo } from 'react';
 import type { StoredAnalysis, Direction } from '../types';
 import { DIRECTION_CONFIG, OUTCOME_CONFIG } from '../types';
 
@@ -85,6 +85,67 @@ function calcUnrealizedPnL(analysis: StoredAnalysis, currentPrice: number) {
   return { hasAmount: true as const, pct: directedPct, gross, net };
 }
 
+interface ProbabilityBarProps {
+  probability: number;
+  timeframeEstimate?: string;
+}
+
+const ProbabilityBar = memo(function ProbabilityBar({ probability, timeframeEstimate }: ProbabilityBarProps) {
+  const barColor = useMemo(() => {
+    if (probability >= 70) return 'bg-emerald-500';
+    if (probability >= 50) return 'bg-yellow-500';
+    return 'bg-red-500';
+  }, [probability]);
+
+  return (
+    <div>
+      <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
+        <div
+          className={`h-full rounded-full transition-all duration-700 ${barColor}`}
+          style={{ width: `${probability}%` }}
+        />
+      </div>
+      {timeframeEstimate && (
+        <p className="text-xs text-gray-400 mt-1.5">
+          Expected timeframe: <span className="text-gray-300">{timeframeEstimate}</span>
+        </p>
+      )}
+    </div>
+  );
+});
+
+interface LevelDisplayProps {
+  entry: number;
+  stopLoss: number;
+  takeProfit: number;
+  symbol: string;
+}
+
+const LevelDisplay = memo(function LevelDisplay({ entry, stopLoss, takeProfit, symbol }: LevelDisplayProps) {
+  return (
+    <div className="grid grid-cols-3 gap-3">
+      <div className="bg-gray-900/50 rounded-lg p-3 text-center">
+        <p className="text-[10px] text-gray-400 uppercase tracking-wider mb-0.5">Entry</p>
+        <p className="text-base font-semibold text-white">
+          {formatPrice(entry, symbol)}
+        </p>
+      </div>
+      <div className="bg-gray-900/50 rounded-lg p-3 text-center">
+        <p className="text-[10px] text-gray-400 uppercase tracking-wider mb-0.5">Stop Loss</p>
+        <p className="text-base font-semibold text-red-400">
+          {formatPrice(stopLoss, symbol)}
+        </p>
+      </div>
+      <div className="bg-gray-900/50 rounded-lg p-3 text-center">
+        <p className="text-[10px] text-gray-400 uppercase tracking-wider mb-0.5">Take Profit</p>
+        <p className="text-base font-semibold text-emerald-400">
+          {formatPrice(takeProfit, symbol)}
+        </p>
+      </div>
+    </div>
+  );
+});
+
 interface AnalysisResultProps {
   analysis: StoredAnalysis | null;
   livePrice?: number | null;
@@ -94,7 +155,7 @@ interface AnalysisResultProps {
   onCancelTrade?: (id: string, exitPrice: number) => void;
 }
 
-export function AnalysisResult({ analysis, livePrice, onSaveFeedback, onConfirmTrade, onRefuseTrade, onCancelTrade }: AnalysisResultProps) {
+export const AnalysisResult = memo(function AnalysisResult({ analysis, livePrice, onSaveFeedback, onConfirmTrade, onRefuseTrade, onCancelTrade }: AnalysisResultProps) {
   const [feedbackDraft, setFeedbackDraft] = useState('');
   const [feedbackSaved, setFeedbackSaved] = useState(false);
 
@@ -107,8 +168,10 @@ export function AnalysisResult({ analysis, livePrice, onSaveFeedback, onConfirmT
   const [levelsError, setLevelsError] = useState<string | null>(null);
 
   // Sync editable fields when a new analysis is selected
+  // This is intentionally setting state in effect to reset form when selection changes
   useEffect(() => {
     if (analysis?.levels) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- Intentional: resetting form state when selection changes
       setEditEntry(String(analysis.levels.entry));
       setEditStopLoss(String(analysis.levels.stopLoss));
       setEditTakeProfit(String(analysis.levels.takeProfit));
@@ -116,10 +179,87 @@ export function AnalysisResult({ analysis, livePrice, onSaveFeedback, onConfirmT
     if (analysis?.direction) {
       setEditDirection(analysis.direction);
     }
-    // Amount always starts empty (no persist)
     setEditAmount('');
     setLevelsError(null);
-  }, [analysis?.id]);
+  }, [analysis?.id, analysis?.levels, analysis?.direction]);
+
+  const handleCancelTrade = useCallback(() => {
+    if (onCancelTrade && analysis && livePrice != null) {
+      onCancelTrade(analysis.id, livePrice);
+    }
+  }, [onCancelTrade, analysis, livePrice]);
+
+  const handleFlipDirection = useCallback(() => {
+    const newDir = editDirection === 'HIGHER' ? 'LOWER' : 'HIGHER';
+    setEditDirection(newDir);
+    const oldSL = editStopLoss;
+    const oldTP = editTakeProfit;
+    setEditStopLoss(oldTP);
+    setEditTakeProfit(oldSL);
+    setLevelsError(null);
+  }, [editDirection, editStopLoss, editTakeProfit]);
+
+  const handleConfirmTrade = useCallback(() => {
+    if (!analysis) return;
+    
+    const entry = parseFloat(editEntry);
+    const sl = parseFloat(editStopLoss);
+    const tp = parseFloat(editTakeProfit);
+
+    if (!entry || !sl || !tp || entry <= 0 || sl <= 0 || tp <= 0) {
+      setLevelsError('Entry, Stop Loss, and Take Profit must be valid positive numbers.');
+      return;
+    }
+
+    if (editDirection === 'HIGHER') {
+      if (sl >= entry) {
+        setLevelsError('HIGHER trade: Stop Loss must be below Entry.');
+        return;
+      }
+      if (tp <= entry) {
+        setLevelsError('HIGHER trade: Take Profit must be above Entry.');
+        return;
+      }
+    } else {
+      if (sl <= entry) {
+        setLevelsError('LOWER trade: Stop Loss must be above Entry.');
+        return;
+      }
+      if (tp >= entry) {
+        setLevelsError('LOWER trade: Take Profit must be below Entry.');
+        return;
+      }
+    }
+
+    setLevelsError(null);
+    if (onConfirmTrade) {
+      const amt = parseFloat(editAmount);
+      onConfirmTrade(
+        analysis.id,
+        { entry, stopLoss: sl, takeProfit: tp },
+        editDirection,
+        amt > 0 ? amt : undefined,
+      );
+    }
+  }, [analysis, editEntry, editStopLoss, editTakeProfit, editDirection, editAmount, onConfirmTrade]);
+
+  const handleRefuseTrade = useCallback(() => {
+    if (onRefuseTrade && analysis) {
+      onRefuseTrade(analysis.id);
+    }
+  }, [onRefuseTrade, analysis]);
+
+  const handleSaveFeedback = useCallback(() => {
+    if (feedbackDraft.trim() && onSaveFeedback && analysis) {
+      onSaveFeedback(analysis.id, feedbackDraft.trim());
+      setFeedbackSaved(true);
+    }
+  }, [feedbackDraft, onSaveFeedback, analysis]);
+
+  const handleFeedbackChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setFeedbackDraft(e.target.value);
+    setFeedbackSaved(false);
+  }, []);
 
   if (!analysis) {
     return (
@@ -166,25 +306,10 @@ export function AnalysisResult({ analysis, livePrice, onSaveFeedback, onConfirmT
       </div>
 
       {/* Probability Bar */}
-      <div>
-        <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
-          <div
-            className={`h-full rounded-full transition-all duration-700 ${
-              analysis.probability >= 70
-                ? 'bg-emerald-500'
-                : analysis.probability >= 50
-                ? 'bg-yellow-500'
-                : 'bg-red-500'
-            }`}
-            style={{ width: `${analysis.probability}%` }}
-          />
-        </div>
-        {analysis.timeframeEstimate && (
-          <p className="text-xs text-gray-400 mt-1.5">
-            Expected timeframe: <span className="text-gray-300">{analysis.timeframeEstimate}</span>
-          </p>
-        )}
-      </div>
+      <ProbabilityBar 
+        probability={analysis.probability} 
+        timeframeEstimate={analysis.timeframeEstimate} 
+      />
 
       {/* AI Reasoning */}
       <div>
@@ -255,11 +380,7 @@ export function AnalysisResult({ analysis, livePrice, onSaveFeedback, onConfirmT
 
                 {/* Cancel Trade button */}
                 <button
-                  onClick={() => {
-                    if (onCancelTrade) {
-                      onCancelTrade(analysis.id, livePrice);
-                    }
-                  }}
+                  onClick={handleCancelTrade}
                   className="w-full py-2 bg-orange-600/80 hover:bg-orange-500 text-white text-sm font-semibold rounded-lg transition-colors cursor-pointer"
                 >
                   Cancel Trade
@@ -279,16 +400,7 @@ export function AnalysisResult({ analysis, livePrice, onSaveFeedback, onConfirmT
               <div className="flex items-center gap-2">
                 <span className="text-[10px] text-gray-400 uppercase tracking-wider">Direction</span>
                 <button
-                  onClick={() => {
-                    const newDir = editDirection === 'HIGHER' ? 'LOWER' : 'HIGHER';
-                    setEditDirection(newDir);
-                    // Auto-swap SL and TP when flipping direction
-                    const oldSL = editStopLoss;
-                    const oldTP = editTakeProfit;
-                    setEditStopLoss(oldTP);
-                    setEditTakeProfit(oldSL);
-                    setLevelsError(null);
-                  }}
+                  onClick={handleFlipDirection}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors cursor-pointer border ${
                     editDirection === 'HIGHER'
                       ? 'bg-emerald-900/30 border-emerald-600/50 text-emerald-400 hover:bg-emerald-900/50'
@@ -364,57 +476,13 @@ export function AnalysisResult({ analysis, livePrice, onSaveFeedback, onConfirmT
               {/* Confirm / Refuse buttons */}
               <div className="flex gap-3">
                 <button
-                  onClick={() => {
-                    const entry = parseFloat(editEntry);
-                    const sl = parseFloat(editStopLoss);
-                    const tp = parseFloat(editTakeProfit);
-
-                    if (!entry || !sl || !tp || entry <= 0 || sl <= 0 || tp <= 0) {
-                      setLevelsError('Entry, Stop Loss, and Take Profit must be valid positive numbers.');
-                      return;
-                    }
-
-                    if (editDirection === 'HIGHER') {
-                      if (sl >= entry) {
-                        setLevelsError('HIGHER trade: Stop Loss must be below Entry.');
-                        return;
-                      }
-                      if (tp <= entry) {
-                        setLevelsError('HIGHER trade: Take Profit must be above Entry.');
-                        return;
-                      }
-                    } else {
-                      if (sl <= entry) {
-                        setLevelsError('LOWER trade: Stop Loss must be above Entry.');
-                        return;
-                      }
-                      if (tp >= entry) {
-                        setLevelsError('LOWER trade: Take Profit must be below Entry.');
-                        return;
-                      }
-                    }
-
-                    setLevelsError(null);
-                    if (onConfirmTrade) {
-                      const amt = parseFloat(editAmount);
-                      onConfirmTrade(
-                        analysis.id,
-                        { entry, stopLoss: sl, takeProfit: tp },
-                        editDirection,
-                        amt > 0 ? amt : undefined,
-                      );
-                    }
-                  }}
+                  onClick={handleConfirmTrade}
                   className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-lg transition-colors text-sm"
                 >
                   Confirm Trade
                 </button>
                 <button
-                  onClick={() => {
-                    if (onRefuseTrade) {
-                      onRefuseTrade(analysis.id);
-                    }
-                  }}
+                  onClick={handleRefuseTrade}
                   className="flex-1 py-2.5 bg-gray-700 hover:bg-gray-600 text-gray-300 font-semibold rounded-lg transition-colors text-sm"
                 >
                   Refuse
@@ -423,26 +491,12 @@ export function AnalysisResult({ analysis, livePrice, onSaveFeedback, onConfirmT
             </>
           ) : (
             /* Non-review — static levels */
-            <div className="grid grid-cols-3 gap-3">
-              <div className="bg-gray-900/50 rounded-lg p-3 text-center">
-                <p className="text-[10px] text-gray-400 uppercase tracking-wider mb-0.5">Entry</p>
-                <p className="text-base font-semibold text-white">
-                  {formatPrice(analysis.levels.entry, analysis.symbol)}
-                </p>
-              </div>
-              <div className="bg-gray-900/50 rounded-lg p-3 text-center">
-                <p className="text-[10px] text-gray-400 uppercase tracking-wider mb-0.5">Stop Loss</p>
-                <p className="text-base font-semibold text-red-400">
-                  {formatPrice(analysis.levels.stopLoss, analysis.symbol)}
-                </p>
-              </div>
-              <div className="bg-gray-900/50 rounded-lg p-3 text-center">
-                <p className="text-[10px] text-gray-400 uppercase tracking-wider mb-0.5">Take Profit</p>
-                <p className="text-base font-semibold text-emerald-400">
-                  {formatPrice(analysis.levels.takeProfit, analysis.symbol)}
-                </p>
-              </div>
-            </div>
+            <LevelDisplay
+              entry={analysis.levels.entry}
+              stopLoss={analysis.levels.stopLoss}
+              takeProfit={analysis.levels.takeProfit}
+              symbol={analysis.symbol}
+            />
           )}
         </div>
       )}
@@ -507,19 +561,14 @@ export function AnalysisResult({ analysis, livePrice, onSaveFeedback, onConfirmT
               </p>
               <textarea
                 value={feedbackDraft}
-                onChange={(e) => { setFeedbackDraft(e.target.value); setFeedbackSaved(false); }}
+                onChange={handleFeedbackChange}
                 placeholder='e.g. "Ignored the 4H overbought RSI divergence and entered too early before the 15m pullback completed."'
                 rows={3}
                 className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm placeholder-gray-500 focus:ring-2 focus:ring-red-500 focus:border-transparent resize-none"
               />
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => {
-                    if (feedbackDraft.trim() && onSaveFeedback) {
-                      onSaveFeedback(analysis.id, feedbackDraft.trim());
-                      setFeedbackSaved(true);
-                    }
-                  }}
+                  onClick={handleSaveFeedback}
                   disabled={!feedbackDraft.trim() || feedbackSaved}
                   className="px-4 py-1.5 bg-red-600 hover:bg-red-500 disabled:bg-gray-700 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors"
                 >
@@ -535,4 +584,4 @@ export function AnalysisResult({ analysis, livePrice, onSaveFeedback, onConfirmT
       )}
     </div>
   );
-}
+});
