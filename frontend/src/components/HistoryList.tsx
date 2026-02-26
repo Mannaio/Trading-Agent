@@ -1,3 +1,4 @@
+import { memo, useCallback } from 'react';
 import type { StoredAnalysis } from '../types';
 import { DIRECTION_CONFIG, OUTCOME_CONFIG } from '../types';
 
@@ -5,6 +6,12 @@ interface HistoryListProps {
   history: StoredAnalysis[];
   onSelect: (analysis: StoredAnalysis) => void;
   selectedId: string | null;
+}
+
+interface HistoryListItemProps {
+  item: StoredAnalysis;
+  isSelected: boolean;
+  onSelect: (analysis: StoredAnalysis) => void;
 }
 
 function timeAgo(timestamp: string): string {
@@ -17,7 +24,45 @@ function timeAgo(timestamp: string): string {
   return `${Math.floor(hrs / 24)}d ago`;
 }
 
-export function HistoryList({ history, onSelect, selectedId }: HistoryListProps) {
+const HistoryListItem = memo(function HistoryListItem({ item, isSelected, onSelect }: HistoryListItemProps) {
+  const cfg = DIRECTION_CONFIG[item.direction];
+  const outCfg = OUTCOME_CONFIG[item.outcome ?? 'pending'];
+
+  const handleClick = useCallback(() => {
+    onSelect(item);
+  }, [onSelect, item]);
+
+  return (
+    <button
+      onClick={handleClick}
+      className={`w-full text-left px-4 py-3 rounded-lg transition-all duration-150 flex items-center cursor-pointer gap-3 ${
+        isSelected
+          ? 'bg-blue-900/40 border border-blue-600'
+          : 'bg-gray-900/50 border border-transparent hover:bg-gray-800 hover:border-gray-600'
+      }`}
+    >
+      <span className="text-lg">{cfg.emoji}</span>
+      <div className="flex-1 min-w-0">
+        <div className="flex items-center gap-2">
+          <span className="text-sm font-medium text-white">
+            {item.symbol.replace('USDT', '')}
+          </span>
+          <span className={`text-sm font-semibold ${cfg.color}`}>{cfg.label}</span>
+          <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full border ${outCfg.bg} ${outCfg.color}`}>
+            {outCfg.emoji} {outCfg.label}
+          </span>
+        </div>
+        <p className="text-xs text-gray-400 truncate">
+          {timeAgo(item.timestamp)} &middot; {item.probability}%
+          {item.screenshotCount > 0 && ` · ${item.screenshotCount} 📸`}
+          {item.outcome === 'lost' && item.feedback && ' · 📝'}
+        </p>
+      </div>
+    </button>
+  );
+});
+
+export const HistoryList = memo(function HistoryList({ history, onSelect, selectedId }: HistoryListProps) {
   if (history.length === 0) {
     return (
       <div className="bg-gray-800/50 rounded-lg p-6 border border-gray-700">
@@ -34,42 +79,15 @@ export function HistoryList({ history, onSelect, selectedId }: HistoryListProps)
       </h2>
 
       <div className="space-y-2">
-        {history.map((item) => {
-          const cfg = DIRECTION_CONFIG[item.direction];
-          const outCfg = OUTCOME_CONFIG[item.outcome ?? 'pending'];
-          const selected = item.id === selectedId;
-
-          return (
-            <button
-              key={item.id}
-              onClick={() => onSelect(item)}
-              className={`w-full text-left px-4 py-3 rounded-lg transition-all duration-150 flex items-center cursor-pointer gap-3 ${
-                selected
-                  ? 'bg-blue-900/40 border border-blue-600'
-                  : 'bg-gray-900/50 border border-transparent hover:bg-gray-800 hover:border-gray-600'
-              }`}
-            >
-              <span className="text-lg">{cfg.emoji}</span>
-              <div className="flex-1 min-w-0">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-medium text-white">
-                    {item.symbol.replace('USDT', '')}
-                  </span>
-                  <span className={`text-sm font-semibold ${cfg.color}`}>{cfg.label}</span>
-                  <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-full border ${outCfg.bg} ${outCfg.color}`}>
-                    {outCfg.emoji} {outCfg.label}
-                  </span>
-                </div>
-                <p className="text-xs text-gray-400 truncate">
-                  {timeAgo(item.timestamp)} &middot; {item.probability}%
-                  {item.screenshotCount > 0 && ` · ${item.screenshotCount} 📸`}
-                  {item.outcome === 'lost' && item.feedback && ' · 📝'}
-                </p>
-              </div>
-            </button>
-          );
-        })}
+        {history.map((item) => (
+          <HistoryListItem
+            key={item.id}
+            item={item}
+            isSelected={item.id === selectedId}
+            onSelect={onSelect}
+          />
+        ))}
       </div>
     </div>
   );
-}
+});

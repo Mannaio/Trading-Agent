@@ -1,10 +1,24 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo, lazy, Suspense } from 'react';
 import { AnalysisForm } from './components/AnalysisForm';
-import { AnalysisResult } from './components/AnalysisResult';
-import { HistoryList } from './components/HistoryList';
-import { StatsPanel } from './components/StatsPanel';
 import { usePriceTracker } from './hooks/usePriceTracker';
 import type { AnalysisRequest, AnalysisResponse, StoredAnalysis, Direction } from './types';
+
+const AnalysisResult = lazy(() => import('./components/AnalysisResult').then(m => ({ default: m.AnalysisResult })));
+const HistoryList = lazy(() => import('./components/HistoryList').then(m => ({ default: m.HistoryList })));
+const StatsPanel = lazy(() => import('./components/StatsPanel').then(m => ({ default: m.StatsPanel })));
+
+function LoadingFallback() {
+  return (
+    <div className="bg-gray-800/50 rounded-lg p-6 border border-gray-700 animate-pulse">
+      <div className="h-6 bg-gray-700 rounded w-1/3 mb-4" />
+      <div className="space-y-3">
+        <div className="h-4 bg-gray-700 rounded w-full" />
+        <div className="h-4 bg-gray-700 rounded w-5/6" />
+        <div className="h-4 bg-gray-700 rounded w-4/6" />
+      </div>
+    </div>
+  );
+}
 
 const STORAGE_KEY = 'trading-agent-history';
 const MAX_HISTORY = 50;
@@ -60,6 +74,11 @@ export default function App() {
     history,
     onUpdate: handleTrackerUpdate,
   });
+
+  const selectedLivePrice = useMemo(() => {
+    if (!selected) return null;
+    return prices[selected.symbol] ?? null;
+  }, [selected, prices]);
 
   // Save feedback for a lost trade
   const handleSaveFeedback = useCallback(
@@ -138,8 +157,7 @@ export default function App() {
     [history],
   );
 
-  // Collect recent lessons from lost trades (last 10 with feedback)
-  function collectLessons(): string[] {
+  const lessons = useMemo(() => {
     return history
       .filter((h) => h.outcome === 'lost' && h.feedback)
       .slice(0, 10)
@@ -149,15 +167,13 @@ export default function App() {
         const date = new Date(h.timestamp).toLocaleDateString();
         return `${sym} ${dir} (${date}): "${h.feedback}"`;
       });
-  }
+  }, [history]);
 
   const handleAnalyze = useCallback(
     async (req: AnalysisRequest) => {
       setLoading(true);
       setError(null);
 
-      // Attach past lessons from lost trades
-      const lessons = collectLessons();
       const enrichedReq = lessons.length > 0 ? { ...req, pastLessons: lessons } : req;
 
       try {
@@ -195,7 +211,7 @@ export default function App() {
         setLoading(false);
       }
     },
-    [history],
+    [history, lessons],
   );
 
   return (
@@ -236,20 +252,26 @@ export default function App() {
 
           {/* Right — Results, Stats & History */}
           <div className="lg:col-span-7 space-y-6">
-            <AnalysisResult
-              analysis={selected}
-              livePrice={selected ? prices[selected.symbol] ?? null : null}
-              onSaveFeedback={handleSaveFeedback}
-              onConfirmTrade={handleConfirmTrade}
-              onRefuseTrade={handleRefuseTrade}
-              onCancelTrade={handleCancelTrade}
-            />
-            <StatsPanel history={history} />
-            <HistoryList
-              history={history}
-              onSelect={setSelected}
-              selectedId={selected?.id ?? null}
-            />
+            <Suspense fallback={<LoadingFallback />}>
+              <AnalysisResult
+                analysis={selected}
+                livePrice={selectedLivePrice}
+                onSaveFeedback={handleSaveFeedback}
+                onConfirmTrade={handleConfirmTrade}
+                onRefuseTrade={handleRefuseTrade}
+                onCancelTrade={handleCancelTrade}
+              />
+            </Suspense>
+            <Suspense fallback={<LoadingFallback />}>
+              <StatsPanel history={history} />
+            </Suspense>
+            <Suspense fallback={<LoadingFallback />}>
+              <HistoryList
+                history={history}
+                onSelect={setSelected}
+                selectedId={selected?.id ?? null}
+              />
+            </Suspense>
           </div>
         </div>
       </main>

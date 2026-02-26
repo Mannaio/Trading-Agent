@@ -203,13 +203,21 @@ export function usePriceTracker({ history, onUpdate }: UsePriceTrackerOptions) {
 
   // Refs for stable access inside callbacks
   const historyRef = useRef(history);
-  historyRef.current = history;
-
   const onUpdateRef = useRef(onUpdate);
-  onUpdateRef.current = onUpdate;
-
   const pricesRef = useRef(prices);
-  pricesRef.current = prices;
+
+  // Update refs in useEffect to avoid render-time mutations
+  useEffect(() => {
+    historyRef.current = history;
+  }, [history]);
+
+  useEffect(() => {
+    onUpdateRef.current = onUpdate;
+  }, [onUpdate]);
+
+  useEffect(() => {
+    pricesRef.current = prices;
+  }, [prices]);
 
   // Track which symbols currently have active WebSocket connections
   const socketsRef = useRef<Map<string, WebSocket>>(new Map());
@@ -375,8 +383,8 @@ export function usePriceTracker({ history, onUpdate }: UsePriceTrackerOptions) {
   // ─── Sync WebSocket connections with pending predictions ───
   useEffect(() => {
     const pending = history.filter((h) => h.outcome === 'pending');
-    const neededSymbols = new Set(pending.map((p) => p.symbol));
-    const activeSymbols = new Set(socketsRef.current.keys());
+    const neededSymbols = new Set<string>(pending.map((p) => p.symbol));
+    const activeSymbols = new Set<string>(socketsRef.current.keys());
 
     // Also include symbols with pending reconnect timers
     for (const sym of reconnectTimersRef.current.keys()) {

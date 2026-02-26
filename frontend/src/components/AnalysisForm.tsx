@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, memo, useMemo } from 'react';
 import type { Symbol, TrendDirection, AnalysisRequest, Indicators } from '../types';
 
 
@@ -10,7 +10,36 @@ interface AnalysisFormProps {
 const MAX_SCREENSHOTS = 3;
 const MAX_FILE_SIZE = 4 * 1024 * 1024; // 4 MB
 
-export function AnalysisForm({ onSubmit, isLoading }: AnalysisFormProps) {
+interface ScreenshotThumbnailProps {
+  src: string;
+  index: number;
+  onRemove: (index: number) => void;
+}
+
+const ScreenshotThumbnail = memo(function ScreenshotThumbnail({ src, index, onRemove }: ScreenshotThumbnailProps) {
+  const handleRemove = useCallback(() => {
+    onRemove(index);
+  }, [onRemove, index]);
+
+  return (
+    <div className="relative group">
+      <img
+        src={src}
+        alt={`Screenshot ${index + 1}`}
+        className="h-20 w-32 object-cover rounded-md border border-gray-600"
+      />
+      <button
+        type="button"
+        onClick={handleRemove}
+        className="absolute -top-2 -right-2 bg-red-600 hover:bg-red-500 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+      >
+        x
+      </button>
+    </div>
+  );
+});
+
+export const AnalysisForm = memo(function AnalysisForm({ onSubmit, isLoading }: AnalysisFormProps) {
   const [symbol, setSymbol] = useState<Symbol>('ETHUSDT');
   const [screenshots, setScreenshots] = useState<string[]>([]);
   const [userReasoning, setUserReasoning] = useState('');
@@ -64,11 +93,11 @@ export function AnalysisForm({ onSubmit, isLoading }: AnalysisFormProps) {
     [addFiles],
   );
 
-  const removeScreenshot = (index: number) => {
+  const removeScreenshot = useCallback((index: number) => {
     setScreenshots((prev) => prev.filter((_, i) => i !== index));
-  };
+  }, []);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = useCallback((e: React.FormEvent) => {
     e.preventDefault();
 
     let indicators: Indicators | undefined;
@@ -85,10 +114,41 @@ export function AnalysisForm({ onSubmit, isLoading }: AnalysisFormProps) {
       userReasoning: userReasoning.trim(),
       indicators,
     });
-  };
+  }, [onSubmit, symbol, screenshots, userReasoning, showIndicators, trend4h, trend1h, trend15m]);
 
-  const canSubmit =
-    !isLoading && (screenshots.length > 0 || userReasoning.trim().length > 0);
+  const canSubmit = useMemo(() => 
+    !isLoading && (screenshots.length > 0 || userReasoning.trim().length > 0),
+    [isLoading, screenshots.length, userReasoning]
+  );
+
+  const handleSymbolChange = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
+    setSymbol(e.target.value as Symbol);
+  }, []);
+
+  const handleUserReasoningChange = useCallback((e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setUserReasoning(e.target.value);
+  }, []);
+
+  const handleToggleIndicators = useCallback(() => {
+    setShowIndicators((prev) => !prev);
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setDragActive(true);
+  }, []);
+
+  const handleDragLeave = useCallback(() => {
+    setDragActive(false);
+  }, []);
+
+  const handleDropZoneClick = useCallback(() => {
+    fileInputRef.current?.click();
+  }, []);
+
+  const handleFileInputChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) addFiles(e.target.files);
+  }, [addFiles]);
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
@@ -97,7 +157,7 @@ export function AnalysisForm({ onSubmit, isLoading }: AnalysisFormProps) {
         <label className="block text-sm font-medium text-gray-300 mb-1.5">Symbol</label>
         <select
           value={symbol}
-          onChange={(e) => setSymbol(e.target.value as Symbol)}
+          onChange={handleSymbolChange}
           className="w-full px-4 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
         >
           <option value="ETHUSDT">ETH / USDT</option>
@@ -115,13 +175,10 @@ export function AnalysisForm({ onSubmit, isLoading }: AnalysisFormProps) {
           </span>
         </label>
         <div
-          onDragOver={(e) => {
-            e.preventDefault();
-            setDragActive(true);
-          }}
-          onDragLeave={() => setDragActive(false)}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
           onDrop={handleDrop}
-          onClick={() => fileInputRef.current?.click()}
+          onClick={handleDropZoneClick}
           className={`border-2 border-dashed rounded-lg p-5 text-center cursor-pointer transition-all ${
             dragActive
               ? 'border-blue-500 bg-blue-500/10'
@@ -134,7 +191,7 @@ export function AnalysisForm({ onSubmit, isLoading }: AnalysisFormProps) {
             accept="image/*"
             multiple
             className="hidden"
-            onChange={(e) => e.target.files && addFiles(e.target.files)}
+            onChange={handleFileInputChange}
           />
           <div className="text-gray-400 text-sm">
             <span className="text-2xl block mb-1">📸</span>
@@ -147,20 +204,12 @@ export function AnalysisForm({ onSubmit, isLoading }: AnalysisFormProps) {
         {screenshots.length > 0 && (
           <div className="flex gap-3 mt-3 flex-wrap">
             {screenshots.map((src, i) => (
-              <div key={i} className="relative group">
-                <img
-                  src={src}
-                  alt={`Screenshot ${i + 1}`}
-                  className="h-20 w-32 object-cover rounded-md border border-gray-600"
-                />
-                <button
-                  type="button"
-                  onClick={() => removeScreenshot(i)}
-                  className="absolute -top-2 -right-2 bg-red-600 hover:bg-red-500 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                >
-                  x
-                </button>
-              </div>
+              <ScreenshotThumbnail
+                key={i}
+                src={src}
+                index={i}
+                onRemove={removeScreenshot}
+              />
             ))}
           </div>
         )}
@@ -173,7 +222,7 @@ export function AnalysisForm({ onSubmit, isLoading }: AnalysisFormProps) {
         </label>
         <textarea
           value={userReasoning}
-          onChange={(e) => setUserReasoning(e.target.value)}
+          onChange={handleUserReasoningChange}
           placeholder="What do you see on the chart? e.g. 'RSI divergence on 1H, DRO showing cycle low approaching on 15m, I think price pushes up 0.5% within 10 min...'"
           rows={4}
           className="w-full px-4 py-3 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm placeholder-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all resize-none"
@@ -184,7 +233,7 @@ export function AnalysisForm({ onSubmit, isLoading }: AnalysisFormProps) {
       <div>
         <button
           type="button"
-          onClick={() => setShowIndicators(!showIndicators)}
+          onClick={handleToggleIndicators}
           className="flex items-center gap-2 text-sm text-gray-400 hover:text-gray-300 transition-colors"
         >
           <svg
@@ -272,4 +321,4 @@ export function AnalysisForm({ onSubmit, isLoading }: AnalysisFormProps) {
       )}
     </form>
   );
-}
+});

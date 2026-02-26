@@ -1,8 +1,8 @@
+import { memo, useMemo } from 'react';
 import type { StoredAnalysis } from '../types';
 
 const FEE_RATE = 0.001; // 0.1% per trade
 
-/** Calculate net P&L for a single resolved trade (returns null if no amount/exit) */
 function tradeNetPnL(h: StoredAnalysis): { net: number; currency: string } | null {
   if (!h.tradeAmount || !h.outcomePrice) return null;
   const amount = h.tradeAmount;
@@ -20,49 +20,63 @@ interface StatsPanelProps {
   history: StoredAnalysis[];
 }
 
-export function StatsPanel({ history }: StatsPanelProps) {
-  const resolved = history.filter((h) => h.outcome === 'won' || h.outcome === 'lost');
-  const cancelled = history.filter((h) => h.outcome === 'cancelled');
-  const pending = history.filter((h) => h.outcome === 'pending');
-  const won = resolved.filter((h) => h.outcome === 'won');
-  const lost = resolved.filter((h) => h.outcome === 'lost');
-  const expired = history.filter((h) => h.outcome === 'expired');
+export const StatsPanel = memo(function StatsPanel({ history }: StatsPanelProps) {
+  const stats = useMemo(() => {
+    const resolved = history.filter((h) => h.outcome === 'won' || h.outcome === 'lost');
+    const cancelled = history.filter((h) => h.outcome === 'cancelled');
+    const pending = history.filter((h) => h.outcome === 'pending');
+    const won = resolved.filter((h) => h.outcome === 'won');
+    const lost = resolved.filter((h) => h.outcome === 'lost');
+    const expired = history.filter((h) => h.outcome === 'expired');
 
-  // Aggregate net P&L by currency (includes won, lost, and cancelled trades)
-  const pnlByCurrency: Record<string, number> = {};
-  for (const h of [...resolved, ...cancelled]) {
-    const r = tradeNetPnL(h);
-    if (r) {
-      pnlByCurrency[r.currency] = (pnlByCurrency[r.currency] ?? 0) + r.net;
+    const pnlByCurrency: Record<string, number> = {};
+    for (const h of [...resolved, ...cancelled]) {
+      const r = tradeNetPnL(h);
+      if (r) {
+        pnlByCurrency[r.currency] = (pnlByCurrency[r.currency] ?? 0) + r.net;
+      }
     }
-  }
-  const pnlEntries = Object.entries(pnlByCurrency);
+    const pnlEntries = Object.entries(pnlByCurrency);
 
-  const winRate = resolved.length > 0 ? Math.round((won.length / resolved.length) * 100) : null;
+    const winRate = resolved.length > 0 ? Math.round((won.length / resolved.length) * 100) : null;
 
-  // Average probability of won vs lost
-  const avgProbWon = won.length > 0
-    ? Math.round(won.reduce((s, h) => s + h.probability, 0) / won.length)
-    : null;
-  const avgProbLost = lost.length > 0
-    ? Math.round(lost.reduce((s, h) => s + h.probability, 0) / lost.length)
-    : null;
+    const avgProbWon = won.length > 0
+      ? Math.round(won.reduce((s, h) => s + h.probability, 0) / won.length)
+      : null;
+    const avgProbLost = lost.length > 0
+      ? Math.round(lost.reduce((s, h) => s + h.probability, 0) / lost.length)
+      : null;
 
-  // Per-symbol breakdown
-  const symbols = [...new Set(history.map((h) => h.symbol))];
-  const symbolStats = symbols.map((sym) => {
-    const symResolved = resolved.filter((h) => h.symbol === sym);
-    const symWon = symResolved.filter((h) => h.outcome === 'won');
+    const symbols = [...new Set(history.map((h) => h.symbol))];
+    const symbolStats = symbols.map((sym) => {
+      const symResolved = resolved.filter((h) => h.symbol === sym);
+      const symWon = symResolved.filter((h) => h.outcome === 'won');
+      return {
+        symbol: sym,
+        total: history.filter((h) => h.symbol === sym).length,
+        resolved: symResolved.length,
+        won: symWon.length,
+        winRate: symResolved.length > 0 ? Math.round((symWon.length / symResolved.length) * 100) : null,
+      };
+    });
+
     return {
-      symbol: sym,
-      total: history.filter((h) => h.symbol === sym).length,
-      resolved: symResolved.length,
-      won: symWon.length,
-      winRate: symResolved.length > 0 ? Math.round((symWon.length / symResolved.length) * 100) : null,
+      resolved,
+      cancelled,
+      pending,
+      won,
+      lost,
+      expired,
+      pnlEntries,
+      winRate,
+      avgProbWon,
+      avgProbLost,
+      symbolStats,
+      hasData: history.length > 0,
     };
-  });
+  }, [history]);
 
-  const hasData = history.length > 0;
+  const { resolved, pending, won, lost, cancelled, expired, pnlEntries, winRate, avgProbWon, avgProbLost, symbolStats, hasData } = stats;
 
   return (
     <div className="bg-gray-800/50 rounded-lg p-6 border border-gray-700">
@@ -188,4 +202,4 @@ export function StatsPanel({ history }: StatsPanelProps) {
       )}
     </div>
   );
-}
+});
