@@ -375,7 +375,7 @@ export function usePriceTracker({ history, onUpdate }: UsePriceTrackerOptions) {
   // ─── Sync WebSocket connections with pending predictions ───
   useEffect(() => {
     const pending = history.filter((h) => h.outcome === 'pending');
-    const neededSymbols = new Set(pending.map((p) => p.symbol));
+    const neededSymbols = new Set<string>(pending.map((p) => p.symbol));
     const activeSymbols = new Set(socketsRef.current.keys());
 
     // Also include symbols with pending reconnect timers
