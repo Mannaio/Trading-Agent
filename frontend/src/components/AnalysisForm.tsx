@@ -29,6 +29,7 @@ export function AnalysisForm({ onSubmit, isLoading }: AnalysisFormProps) {
   const [trend15m, setTrend15m] = useState<TrendDirection>('neutral');
 
   const [dragActive, setDragActive] = useState(false);
+  const [capturing, setCapturing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const processFile = useCallback((file: File): Promise<string> => {
@@ -69,6 +70,31 @@ export function AnalysisForm({ onSubmit, isLoading }: AnalysisFormProps) {
     },
     [entries.length, processFile],
   );
+
+  const handleCapture = useCallback(async () => {
+    setCapturing(true);
+    try {
+      const res = await fetch(`/capture/capture?symbol=${symbol}`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error((data as { error?: string }).error ?? `Capture failed (${res.status})`);
+      }
+      const data: { screenshots: string[] } = await res.json();
+      if (data.screenshots.length === 0) {
+        throw new Error('No screenshots returned');
+      }
+      setEntries(
+        data.screenshots.slice(0, MAX_SCREENSHOTS).map((dataUrl, index) => ({
+          dataUrl,
+          timeframe: DEFAULT_TIMEFRAMES[index] ?? '15m',
+        })),
+      );
+    } catch (err) {
+      alert(err instanceof Error ? err.message : 'Failed to capture charts');
+    } finally {
+      setCapturing(false);
+    }
+  }, [symbol]);
 
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
@@ -141,6 +167,36 @@ export function AnalysisForm({ onSubmit, isLoading }: AnalysisFormProps) {
             ({entries.length}/{MAX_SCREENSHOTS})
           </span>
         </label>
+        <button
+          type="button"
+          onClick={handleCapture}
+          disabled={capturing || entries.length >= MAX_SCREENSHOTS}
+          className="mb-3 inline-flex items-center gap-2 px-4 py-2 bg-gray-800 border border-gray-600 hover:bg-gray-700 disabled:bg-gray-800/50 disabled:border-gray-700 disabled:text-gray-500 disabled:cursor-not-allowed rounded-lg text-sm text-gray-100 transition-colors"
+        >
+          {capturing ? (
+            <>
+              <svg
+                className="animate-spin h-4 w-4"
+                xmlns="http://www.w3.org/2000/svg"
+                fill="none"
+                viewBox="0 0 24 24"
+              >
+                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                <path
+                  className="opacity-75"
+                  fill="currentColor"
+                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                />
+              </svg>
+              Capturing... (4H → 1H → 15m)
+            </>
+          ) : (
+            <>
+              <span>📷</span>
+              Capture from TradingView
+            </>
+          )}
+        </button>
         <div
           onDragOver={(e) => {
             e.preventDefault();
