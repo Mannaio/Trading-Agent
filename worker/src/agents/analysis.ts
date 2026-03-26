@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import type { AnalysisRequest, AnalysisResponse, Direction } from '../types';
+import type { AnalysisRequest, AnalysisResponse, Direction, Timeframe, TimeframeAnalysis } from '../types';
 
 /**
  * Analysis Agent — GPT-4o (vision) scalp prediction
@@ -20,7 +20,7 @@ export class AnalysisAgent {
       model: 'gpt-4o',
       messages,
       temperature: 0.25,
-      max_tokens: 2048,
+      max_tokens: 3000,
       response_format: { type: 'json_object' },
     });
 
@@ -41,11 +41,19 @@ export class AnalysisAgent {
 
     const userContent: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [];
 
-    // Screenshots (vision)
-    for (const dataUrl of req.screenshots) {
+    // Screenshots (vision) — label each with the user-selected timeframe
+    const meta = req.screenshotsMeta;
+    for (let i = 0; i < req.screenshots.length; i++) {
+      const m = meta?.[i];
+      const tfLabel = m
+        ? m.timeframe.toUpperCase().replace('M', 'm')
+        : `(read from chart header)`;
+      const label = `Chart ${i + 1} of ${req.screenshots.length} — Timeframe: ${tfLabel}`;
+
+      userContent.push({ type: 'text', text: label });
       userContent.push({
         type: 'image_url',
-        image_url: { url: dataUrl, detail: 'high' },
+        image_url: { url: req.screenshots[i], detail: 'high' },
       });
     }
 
@@ -86,7 +94,7 @@ GOAL
 Predict whether price will move UP or DOWN by at least 0.5% from the current level in the near term (minutes to ~30 min). This is a scalp trade.
 
 INPUTS YOU RECEIVE
-• Up to 3 chart screenshots (typically 4H, 1H, 15m) — these show candlestick charts with overlaid indicators. The standard setup includes:
+• Up to 3 chart screenshots — each is labeled, and the ACTUAL timeframe is shown in the chart header (top-left area, e.g. "· 4h ·", "· 1h ·", "· 15 ·"). CRITICAL: You MUST read the timeframe from each chart's header. Do NOT assume the order is 4H→1H→15m — the user may upload them in any order. These show candlestick charts with overlaid indicators. The standard setup includes:
   - DRO Alert / ZigZag (bottom panel) — shows cycle pivots (HIGH/LOW labels), dominant cycle length, and distances between pivots. This is the PRIMARY trend/cycle indicator.
   - RSI (Relative Strength Index) — above 70 = overbought, below 30 = oversold. Look for divergences with price.
   - DRO Oscillator (Detrended Rhythm Oscillator) — shows momentum and cycle timing. Zero-line crossings and divergences are key.
@@ -98,6 +106,7 @@ INPUTS YOU RECEIVE
   - Trend direction per timeframe (4H, 1H, 15m) as assessed by the user
     · This is their subjective view based on whatever method they use (EMA, market structure, price action)
     · You may agree or disagree based on what you see in the charts
+  - The timeframe for each screenshot is explicitly labeled in the text before each image. Use this label as the definitive timeframe — do NOT guess from image order.
 
 YOUR JOB — follow this EXACT analysis order:
 1. **DRO Cycle (trend direction):** Start with the DRO Alert ZigZag. Follow these sub-steps CAREFULLY:
@@ -107,11 +116,11 @@ YOUR JOB — follow this EXACT analysis order:
    d) **Count bars since last pivot.** This is how many bars have passed from the last turning point to the current bar. CRITICAL: Do NOT confuse this with the numbers printed between past pivots — those are distances of COMPLETED past half-cycles and are NOT the current bar count. The current bar count is the distance from the rightmost pivot to the right edge of the chart.
    e) **Calculate cycle progress:** bars-since-last-pivot / Mean × 100%. Example: if last pivot was a LOW 35 bars ago and Mean is 68, you are 51% through the upward half-cycle.
    f) If DRO Alert is not visible, determine the trend from whatever trend/cycle indicator IS visible, or from price structure.
-2. **EMA Structure (trend state & exhaustion):** For each timeframe (4H, 1H, 15m), read the EMA 50 (fast) and EMA 200 (slow) from the chart:
+2. **EMA Structure (trend state & exhaustion):** You MUST analyze ALL provided timeframes (4H, 1H, 15m) — do NOT skip any. For EACH timeframe, read the EMA 50 (fast) and EMA 200 (slow) NUMERICAL VALUES from that chart's header. The header line typically reads like "RSI2 (2, 200, 50, EMA, ...) 0.02981 0.03000" — the first value is EMA 200 and the second is EMA 50. You MUST read these exact numbers, not estimate visually:
    a) **Crossover state:** Is EMA 50 above EMA 200 (bullish / golden cross) or below (bearish / death cross)? This sets the macro structural bias.
-   b) **Distance between EMAs:** Tight (recently crossed or converging) = early trend, likely continuation. Moderate = established trend. Wide = strongly trending but potentially overextended.
+   b) **Distance between EMAs (gap %):** Compute: |EMA50 - EMA200| / min(EMA50, EMA200) × 100. Classify strictly by these thresholds — TIGHT: below 1% (e.g. 0.64% = tight — recently crossed, early trend). MODERATE: 1% to 3% (e.g. 1.16% = moderate — established trend). WIDE: above 3% (e.g. 3.10% = wide — strongly trending, potentially overextended). CRITICAL: Do NOT confuse "price distance from EMAs" with "gap between the two EMAs" — they are completely different measurements.
    c) **Price position relative to EMAs:** Above both, between them, or below both.
-   d) **Interpret:** Wide EMA spread + price far from both EMAs = overextended, higher reversal probability. Narrow spread or recent cross = early trend, continuation likely. Price between the two EMAs = indecision or trend change. EMA 50 curving toward EMA 200 = trend weakening even if spread is still wide.
+   d) **Interpret:** Wide EMA gap + price far from both EMAs = overextended, higher reversal probability. Tight EMA gap or recent cross = early trend, continuation likely. Price between the two EMAs = indecision or trend change. EMA 50 curving toward EMA 200 = trend weakening even if spread is still wide.
    e) If EMAs are not visible, skip this step.
 3. **RSI Validation:** Read the RSI value from each timeframe. Does RSI confirm or challenge the DRO trend? Look for overbought/oversold levels and divergences with price. If RSI is not visible, use whatever momentum indicator IS visible to validate the trend.
 4. **DRO Momentum (timing):** Read the DRO Oscillator value. Is it above/below zero? Crossing? Diverging from price? This tells you if momentum supports the cycle direction or is weakening. If the DRO Oscillator is not visible, use whatever oscillator IS visible for timing.
@@ -122,13 +131,15 @@ YOUR JOB — follow this EXACT analysis order:
 
 IMPORTANT: If the screenshots show DIFFERENT indicators than DRO/RSI/EMA (e.g. MACD, Bollinger Bands, Stochastic, etc.), adapt your analysis. Follow the same structure — trend first, then structure/exhaustion, then validation, then timing — but use whatever indicators are actually visible. Name them explicitly in your reasoning.
 
-REASONING REQUIREMENTS — your "reasoning" field MUST follow this structure:
-• **DRO Cycle:** You MUST state ALL of the following: (1) the last pivot type — HIGH or LOW, (2) that the ZigZag is therefore heading in the OPPOSITE direction (DOWN from HIGH, UP from LOW), (3) the Mean half-cycle length, (4) bars since last pivot (counted from the rightmost pivot to the current bar — NOT a number from between past pivots), (5) cycle progress = bars-since-pivot / Mean as a percentage. Example: "Last pivot was a LOW ~35 bars ago. Mean is 68 → 51% through the upward half-cycle, suggesting more room for upside before a HIGH forms." NEVER confuse past half-cycle distances (numbers printed between pivots) with bars-since-last-pivot. If DRO is not visible, describe the trend from the available indicators instead.
-• **EMA Structure:** State per-timeframe: (1) crossover state — EMA 50 above or below 200, (2) gap width — tight, moderate, or wide, (3) price position — above both, between, or below both, (4) assessment — continuation or exhaustion. Example: "EMA Structure: 4H — EMA 50 above 200 (bullish), wide gap, price extended well above both → overextended, reversal risk. 1H — EMA 50 above 200, moderate gap, price near EMA 50 → healthy trend. 15m — EMA 50 crossing below 200 (bearish cross) → short-term bearish shift." If EMAs are not visible, skip this section.
-• **RSI Validation:** State the RSI value for each timeframe (e.g. "RSI 4H at 72, 1H at 45, 15m at 62") and whether it confirms or diverges from the DRO trend. If RSI is not visible, validate using whatever momentum indicator is shown.
-• **DRO Momentum:** State the DRO Oscillator value, direction, and any zero-line crossings or divergences. If not visible, use whatever oscillator is available.
-• **Conclusion:** Explain HOW these indicators work together — connect them into a narrative, don't just list them. Explicitly tie EMA structure to DRO cycle: e.g. EMA exhaustion + DRO nearing pivot = strong reversal; EMA early trend + DRO mid-cycle = continuation. Example: "DRO ZigZag printed a HIGH pivot 6 bars ago on the 4H and is heading down. EMA 50 is well above EMA 200 with a wide gap and price extended above both — overextended to the upside. RSI 4H at 72 is overbought, confirming downside pressure. DRO Oscillator is below zero and declining, meaning bearish momentum is accelerating. The combination of EMA overextension + DRO heading down + overbought RSI creates a strong bearish confluence. However, 15m RSI at 32 suggests a short-term bounce before the larger move down."
-• If DRO ZigZag cycle data is visible, always reference cycle progress as bars-since-pivot / Mean. Read the Mean value and pivot labels directly from the chart images.
+ANALYSIS FIELD REQUIREMENTS — each key in "analysis" (4h, 1h, 15m) MUST have these sub-fields:
+• **"ema"**: Read EMA 50 and EMA 200 NUMERICAL VALUES from that chart's header. State: (1) EMA 50 value, (2) EMA 200 value, (3) computed gap % = |EMA50−EMA200|/min × 100, classified strictly as: tight (<1%), moderate (1-3%), wide (>3%). Example: 0.64% = tight, 1.16% = moderate, 3.10% = wide. (4) crossover state — bullish or bearish, (5) price position — above both, between, or below both, (6) assessment. If EMAs not visible, say "EMAs not visible."
+• **"rsi"**: Read the RSI value from that chart. State the value, whether overbought (>70) / oversold (<30) / neutral, and any divergence with price. If RSI not visible, use whatever momentum indicator is shown.
+• **"dro"**: State: (1) last pivot type — HIGH or LOW, (2) direction heading (opposite of pivot), (3) Mean half-cycle length, (4) bars since last pivot (from rightmost pivot to current bar — NOT numbers between past pivots), (5) cycle progress = bars-since-pivot / Mean as %. If DRO not visible, describe trend from available indicators.
+
+CONCLUSION FIELD — your "conclusion" MUST:
+• Explain HOW indicators across all timeframes work together — connect them into a narrative, don't just list them.
+• Explicitly tie EMA structure to DRO cycle: EMA exhaustion + DRO nearing pivot = strong reversal; EMA early trend + DRO mid-cycle = continuation.
+• Example: "4H DRO overdue for a HIGH (165% of Mean) while EMA gap is tight (early trend) — conflicting signals reduce confidence. 1H shows wide EMA gap (overextended) + overbought RSI, aligning with bearish DRO direction. 15m DRO also overdue for a LOW. Overall bearish confluence on 1H/15m outweighs 4H ambiguity."
 
 THESIS FEEDBACK REQUIREMENTS — your "thesisFeedback" field MUST:
 • Evaluate the user's trend direction for EACH timeframe (4H, 1H, 15m) individually.
@@ -141,7 +152,24 @@ RESPONSE FORMAT — respond ONLY with valid JSON:
   "direction": "HIGHER" | "LOWER" | "UNCLEAR",
   "probability": <number 0-100>,
   "timeframeEstimate": "<e.g. '5-15 minutes'>",
-  "reasoning": "<detailed analysis following REASONING REQUIREMENTS above, 4-8 sentences>",
+  "analysis": {
+    "4h": {
+      "ema": "<EMA 50: X, EMA 200: Y, gap: Z% (tight/moderate/wide), crossover state, price position, assessment>",
+      "rsi": "<RSI value, overbought/oversold/neutral, divergence if any>",
+      "dro": "<last pivot type, direction heading, Mean, bars since pivot, cycle progress %>"
+    },
+    "1h": {
+      "ema": "<same format>",
+      "rsi": "<same format>",
+      "dro": "<same format>"
+    },
+    "15m": {
+      "ema": "<same format>",
+      "rsi": "<same format>",
+      "dro": "<same format>"
+    }
+  },
+  "conclusion": "<How all indicators across timeframes work together — the narrative synthesis, 2-4 sentences>",
   "thesisFeedback": "<per-timeframe evaluation following THESIS FEEDBACK REQUIREMENTS above>",
   "keyRisk": "<what could invalidate this, 1-2 sentences>",
   "entry": <number>,
@@ -176,10 +204,22 @@ RULES
     const probability = this.clamp(json.probability, 0, 100);
     const timeframeEstimate =
       typeof json.timeframeEstimate === 'string' ? json.timeframeEstimate : '5-15 minutes';
-    const reasoning =
-      typeof json.reasoning === 'string' && json.reasoning.trim()
-        ? json.reasoning.trim()
-        : 'No reasoning provided.';
+    const analysis = this.parseAnalysis(json.analysis);
+    const conclusion =
+      typeof json.conclusion === 'string' && json.conclusion.trim()
+        ? json.conclusion.trim()
+        : '';
+
+    // Build flat reasoning from structured analysis for backward compat
+    const tfParts: string[] = [];
+    for (const tf of ['4h', '1h', '15m'] as const) {
+      const a = analysis[tf];
+      tfParts.push(`[${tf.toUpperCase().replace('M', 'm')}] EMA: ${a.ema}. RSI: ${a.rsi}. DRO: ${a.dro}.`);
+    }
+    const reasoning = conclusion
+      ? `${tfParts.join(' ')} Conclusion: ${conclusion}`
+      : tfParts.join(' ');
+
     const thesisFeedback =
       typeof json.thesisFeedback === 'string' ? json.thesisFeedback.trim() : '';
     const keyRisk = typeof json.keyRisk === 'string' ? json.keyRisk.trim() : '';
@@ -207,12 +247,39 @@ RULES
       direction,
       probability,
       timeframeEstimate,
+      analysis,
+      conclusion,
       reasoning,
       thesisFeedback,
       keyRisk,
       levels: { entry, stopLoss, takeProfit },
       timestamp: new Date().toISOString(),
     };
+  }
+
+  private parseAnalysis(val: unknown): Record<Timeframe, TimeframeAnalysis> {
+    const fallback: TimeframeAnalysis = { ema: 'N/A', rsi: 'N/A', dro: 'N/A' };
+    const result: Record<Timeframe, TimeframeAnalysis> = {
+      '4h': { ...fallback },
+      '1h': { ...fallback },
+      '15m': { ...fallback },
+    };
+
+    if (!val || typeof val !== 'object') return result;
+    const obj = val as Record<string, unknown>;
+
+    for (const tf of ['4h', '1h', '15m'] as const) {
+      const entry = obj[tf];
+      if (!entry || typeof entry !== 'object') continue;
+      const e = entry as Record<string, unknown>;
+      result[tf] = {
+        ema: typeof e.ema === 'string' ? e.ema.trim() : 'N/A',
+        rsi: typeof e.rsi === 'string' ? e.rsi.trim() : 'N/A',
+        dro: typeof e.dro === 'string' ? e.dro.trim() : 'N/A',
+      };
+    }
+
+    return result;
   }
 
   private validDirection(v: unknown): Direction {

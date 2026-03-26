@@ -7,6 +7,14 @@ export type TrendDirection = 'bullish' | 'bearish' | 'neutral';
 // ─── Timeframes ───
 export type Timeframe = '4h' | '1h' | '15m';
 
+// ─── Per-screenshot metadata ───
+export interface ScreenshotMeta {
+  dataUrl: string;
+  timeframe: Timeframe;
+  ema50?: number;
+  ema200?: number;
+}
+
 // ─── Prediction Direction ───
 export type Direction = 'HIGHER' | 'LOWER' | 'UNCLEAR';
 
@@ -22,9 +30,17 @@ export interface Indicators {
 export interface AnalysisRequest {
   symbol: Symbol;
   screenshots: string[];        // base64 data URLs (max 3)
+  screenshotsMeta?: ScreenshotMeta[];
   userReasoning: string;        // user's own thinking / thesis
   indicators?: Indicators;      // optional structured data
   pastLessons?: string[];       // feedback from past lost trades
+}
+
+// ─── Per-timeframe analysis ───
+export interface TimeframeAnalysis {
+  ema: string;
+  rsi: string;
+  dro: string;
 }
 
 // ─── API Response ───
@@ -32,6 +48,8 @@ export interface AnalysisResponse {
   direction: Direction;
   probability: number;          // 0-100
   timeframeEstimate: string;    // e.g. "5-15 minutes"
+  analysis: Record<Timeframe, TimeframeAnalysis>;
+  conclusion: string;
   reasoning: string;
   thesisFeedback: string;
   keyRisk: string;

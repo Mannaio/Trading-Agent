@@ -1,6 +1,13 @@
 import { useState, useRef, useCallback } from 'react';
-import type { Symbol, TrendDirection, AnalysisRequest, Indicators } from '../types';
+import type { Symbol, Timeframe, TrendDirection, AnalysisRequest, Indicators, ScreenshotMeta } from '../types';
 
+interface ScreenshotEntry {
+  dataUrl: string;
+  timeframe: Timeframe;
+}
+
+const DEFAULT_TIMEFRAMES: Timeframe[] = ['4h', '1h', '15m'];
+const TIMEFRAME_LABELS: Record<Timeframe, string> = { '4h': '4H', '1h': '1H', '15m': '15m' };
 
 interface AnalysisFormProps {
   onSubmit: (request: AnalysisRequest) => void;
@@ -12,7 +19,7 @@ const MAX_FILE_SIZE = 4 * 1024 * 1024; // 4 MB
 
 export function AnalysisForm({ onSubmit, isLoading }: AnalysisFormProps) {
   const [symbol, setSymbol] = useState<Symbol>('ETHUSDT');
-  const [screenshots, setScreenshots] = useState<string[]>([]);
+  const [entries, setEntries] = useState<ScreenshotEntry[]>([]);
   const [userReasoning, setUserReasoning] = useState('');
   const [showIndicators, setShowIndicators] = useState(false);
 
@@ -43,16 +50,24 @@ export function AnalysisForm({ onSubmit, isLoading }: AnalysisFormProps) {
 
   const addFiles = useCallback(
     async (files: FileList | File[]) => {
-      const remaining = MAX_SCREENSHOTS - screenshots.length;
+      const remaining = MAX_SCREENSHOTS - entries.length;
       const toProcess = Array.from(files).slice(0, remaining);
       try {
         const results = await Promise.all(toProcess.map(processFile));
-        setScreenshots((prev) => [...prev, ...results].slice(0, MAX_SCREENSHOTS));
+        setEntries((prev) => {
+          const usedTfs = new Set(prev.map((e) => e.timeframe));
+          const newEntries: ScreenshotEntry[] = results.map((dataUrl) => {
+            const tf = DEFAULT_TIMEFRAMES.find((t) => !usedTfs.has(t)) ?? '15m';
+            usedTfs.add(tf);
+            return { dataUrl, timeframe: tf };
+          });
+          return [...prev, ...newEntries].slice(0, MAX_SCREENSHOTS);
+        });
       } catch (err) {
         alert(err instanceof Error ? err.message : 'Failed to add image');
       }
     },
-    [screenshots.length, processFile],
+    [entries.length, processFile],
   );
 
   const handleDrop = useCallback(
@@ -65,7 +80,11 @@ export function AnalysisForm({ onSubmit, isLoading }: AnalysisFormProps) {
   );
 
   const removeScreenshot = (index: number) => {
-    setScreenshots((prev) => prev.filter((_, i) => i !== index));
+    setEntries((prev) => prev.filter((_, i) => i !== index));
+  };
+
+  const updateEntry = (index: number, patch: Partial<ScreenshotEntry>) => {
+    setEntries((prev) => prev.map((e, i) => (i === index ? { ...e, ...patch } : e)));
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -79,16 +98,24 @@ export function AnalysisForm({ onSubmit, isLoading }: AnalysisFormProps) {
       };
     }
 
+    const screenshots = entries.map((e) => e.dataUrl);
+
+    const screenshotsMeta: ScreenshotMeta[] = entries.map((e) => ({
+      dataUrl: e.dataUrl,
+      timeframe: e.timeframe,
+    }));
+
     onSubmit({
       symbol,
       screenshots,
+      screenshotsMeta,
       userReasoning: userReasoning.trim(),
       indicators,
     });
   };
 
   const canSubmit =
-    !isLoading && (screenshots.length > 0 || userReasoning.trim().length > 0);
+    !isLoading && (entries.length > 0 || userReasoning.trim().length > 0);
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
@@ -111,7 +138,7 @@ export function AnalysisForm({ onSubmit, isLoading }: AnalysisFormProps) {
         <label className="block text-sm font-medium text-gray-300 mb-1.5">
           Chart Screenshots
           <span className="ml-1 text-gray-500 font-normal">
-            ({screenshots.length}/{MAX_SCREENSHOTS})
+            ({entries.length}/{MAX_SCREENSHOTS})
           </span>
         </label>
         <div
@@ -126,7 +153,7 @@ export function AnalysisForm({ onSubmit, isLoading }: AnalysisFormProps) {
             dragActive
               ? 'border-blue-500 bg-blue-500/10'
               : 'border-gray-600 hover:border-gray-500 bg-gray-900/50'
-          } ${screenshots.length >= MAX_SCREENSHOTS ? 'opacity-50 pointer-events-none' : ''}`}
+          } ${entries.length >= MAX_SCREENSHOTS ? 'opacity-50 pointer-events-none' : ''}`}
         >
           <input
             ref={fileInputRef}
@@ -138,28 +165,47 @@ export function AnalysisForm({ onSubmit, isLoading }: AnalysisFormProps) {
           />
           <div className="text-gray-400 text-sm">
             <span className="text-2xl block mb-1">📸</span>
-            {screenshots.length >= MAX_SCREENSHOTS
+            {entries.length >= MAX_SCREENSHOTS
               ? 'Max screenshots reached'
               : 'Drop chart screenshots here or click to upload'}
           </div>
         </div>
 
-        {screenshots.length > 0 && (
-          <div className="flex gap-3 mt-3 flex-wrap">
-            {screenshots.map((src, i) => (
-              <div key={i} className="relative group">
-                <img
-                  src={src}
-                  alt={`Screenshot ${i + 1}`}
-                  className="h-20 w-32 object-cover rounded-md border border-gray-600"
-                />
-                <button
-                  type="button"
-                  onClick={() => removeScreenshot(i)}
-                  className="absolute -top-2 -right-2 bg-red-600 hover:bg-red-500 text-white text-xs w-5 h-5 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                >
-                  x
-                </button>
+        {entries.length > 0 && (
+          <div className="space-y-3 mt-3">
+            {entries.map((entry, i) => (
+              <div
+                key={i}
+                className="bg-gray-800/60 rounded-lg border border-gray-700 overflow-hidden"
+              >
+                {/* Preview image — full width */}
+                <div className="relative group">
+                  <img
+                    src={entry.dataUrl}
+                    alt={`Screenshot ${i + 1}`}
+                    className="w-full h-40 object-cover object-top"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeScreenshot(i)}
+                    className="absolute top-2 right-2 bg-red-600 hover:bg-red-500 text-white text-xs w-6 h-6 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                  >
+                    x
+                  </button>
+                </div>
+
+                {/* Timeframe selector */}
+                <div className="p-2.5">
+                  <select
+                    value={entry.timeframe}
+                    onChange={(e) => updateEntry(i, { timeframe: e.target.value as Timeframe })}
+                    className="w-full px-2.5 py-1.5 bg-gray-900 border border-gray-600 rounded-md text-white text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    {DEFAULT_TIMEFRAMES.map((tf) => (
+                      <option key={tf} value={tf}>{TIMEFRAME_LABELS[tf]}</option>
+                    ))}
+                  </select>
+                </div>
               </div>
             ))}
           </div>

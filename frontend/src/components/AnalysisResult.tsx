@@ -186,12 +186,49 @@ export function AnalysisResult({ analysis, livePrice, onSaveFeedback, onConfirmT
         )}
       </div>
 
-      {/* AI Reasoning */}
+      {/* AI Reasoning — grouped by timeframe */}
       <div>
-        <h4 className="text-sm font-medium text-gray-400 mb-1.5">AI Reasoning</h4>
-        <p className="text-gray-300 text-sm leading-relaxed bg-gray-900/50 rounded-lg p-4">
-          {analysis.reasoning}
-        </p>
+        <h4 className="text-sm font-medium text-gray-400 mb-2">AI Reasoning</h4>
+
+        {analysis.analysis ? (
+          <div className="space-y-2">
+            {(['4h', '1h', '15m'] as const).map((tf) => {
+              const a = analysis.analysis[tf];
+              if (!a) return null;
+              const label = tf.toUpperCase().replace('M', 'm');
+              return (
+                <div key={tf} className="bg-gray-900/50 rounded-lg p-3 border border-gray-700/50">
+                  <h5 className="text-xs font-semibold text-gray-300 uppercase tracking-wider mb-2">{label}</h5>
+                  <ul className="space-y-1.5 text-sm text-gray-300">
+                    <li className="flex gap-2">
+                      <span className="text-gray-500 shrink-0">EMA</span>
+                      <span className="leading-relaxed">{a.ema}</span>
+                    </li>
+                    <li className="flex gap-2">
+                      <span className="text-gray-500 shrink-0">RSI</span>
+                      <span className="leading-relaxed">{a.rsi}</span>
+                    </li>
+                    <li className="flex gap-2">
+                      <span className="text-gray-500 shrink-0">DRO</span>
+                      <span className="leading-relaxed">{a.dro}</span>
+                    </li>
+                  </ul>
+                </div>
+              );
+            })}
+
+            {analysis.conclusion && (
+              <div className="bg-gray-900/50 rounded-lg p-3 border border-blue-800/30">
+                <h5 className="text-xs font-semibold text-blue-400 uppercase tracking-wider mb-1">Conclusion</h5>
+                <p className="text-sm text-gray-300 leading-relaxed">{analysis.conclusion}</p>
+              </div>
+            )}
+          </div>
+        ) : (
+          <p className="text-gray-300 text-sm leading-relaxed bg-gray-900/50 rounded-lg p-4">
+            {analysis.reasoning}
+          </p>
+        )}
       </div>
 
       {/* Thesis Feedback */}
