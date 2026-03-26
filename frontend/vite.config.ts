@@ -11,6 +11,10 @@ export default defineConfig({
         target: 'http://localhost:8787',
         changeOrigin: true,
       },
+      '/capture': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+      },
       '/binance': {
         target: 'https://api.binance.com',
         changeOrigin: true,
