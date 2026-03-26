@@ -82,6 +82,19 @@ npm run dev          # runs on http://localhost:5173
 
 The frontend proxies `/api/*` to the worker at `localhost:8787`.
 
+## Chart Capture (Optional)
+
+1. One-time setup: launch Chrome with remote debugging enabled:
+   ```bash
+   ./capture/launch-chrome.sh
+   ```
+2. Start the capture server:
+   ```bash
+   cd capture && npm run dev
+   ```
+3. Open TradingView with your chart layout in Chrome.
+4. Click "Capture from TradingView" in the Trading-Agent app.
+
 ## API
 
 ### POST /api/analyze
