@@ -30,3 +30,4 @@ pnpm-debug.log*
 
 # OS
 Thumbs.db
+capture/node_modules
