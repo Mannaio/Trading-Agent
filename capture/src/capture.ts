@@ -94,23 +94,16 @@ async function switchSymbol(page: Page, symbol: string): Promise<void> {
 
   console.log(`[Capture] Step 1: Clicking symbol button...`);
   await symbolButton.click();
-  await page.waitForTimeout(600);
+  await page.waitForTimeout(800);
 
-  // Step 2: Find the search input in the modal
-  console.log(`[Capture] Step 2: Looking for search input...`);
-  
-  const searchInput = await page.$('input[type="text"]');
-
-  if (!searchInput) {
-    console.log(`[Capture] ERROR: Could not find search input`);
-    await page.keyboard.press('Escape');
-    throw new Error('Could not find symbol search input');
-  }
-
-  // Step 3: Clear and type the new symbol
-  console.log(`[Capture] Step 3: Typing "${symbol}"...`);
-  await searchInput.click({ clickCount: 3 }); // Select all existing text
+  // Step 2: The search input should already be focused, just select all and type
+  // Using keyboard shortcuts for cross-platform compatibility
+  console.log(`[Capture] Step 2: Selecting all text in search input...`);
+  await page.keyboard.press('Meta+a'); // Cmd+A on Mac
   await page.waitForTimeout(100);
+
+  // Step 3: Type the new symbol (will replace selected text)
+  console.log(`[Capture] Step 3: Typing "${symbol}"...`);
   await page.keyboard.type(symbol, { delay: 50 });
   
   // Wait for search results to load
@@ -118,7 +111,7 @@ async function switchSymbol(page: Page, symbol: string): Promise<void> {
   await page.waitForTimeout(1000);
 
   // Step 4: Press Down arrow to select first result, then Enter
-  console.log(`[Capture] Step 4: Selecting first result...`);
+  console.log(`[Capture] Step 4: Selecting first result (ArrowDown + Enter)...`);
   await page.keyboard.press('ArrowDown');
   await page.waitForTimeout(100);
   await page.keyboard.press('Enter');
