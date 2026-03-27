@@ -136,97 +136,26 @@ async function waitForChartToLoad(page: Page): Promise<void> {
 }
 
 async function takeNativeSnapshot(page: Page): Promise<string> {
-  // Use TradingView's native "Take a snapshot" feature (camera icon)
-  // This produces the same high-quality image as manually clicking the camera
+  console.log(`[Capture] Taking screenshot of full viewport...`);
   
-  console.log(`[Capture] Looking for camera button...`);
-  
-  // Find and click the camera icon
-  const cameraSelectors = [
-    '[data-name="take-screenshot"]',
-    '[aria-label="Take a snapshot"]',
-    'button[class*="screenshot"]',
-    '#header-toolbar-screenshot',
-  ];
-  
-  let cameraButton = null;
-  for (const selector of cameraSelectors) {
-    cameraButton = await page.$(selector);
-    if (cameraButton) {
-      console.log(`[Capture] Found camera button: ${selector}`);
-      break;
-    }
-  }
-  
-  if (cameraButton) {
-    await cameraButton.click();
-    await page.waitForTimeout(500);
-    
-    // Look for "Copy image" option in the dropdown menu
-    const copyImageSelectors = [
-      '[data-name="copy-image-to-clipboard"]',
-      'div[class*="menuItem"]:has-text("Copy image")',
-      '[class*="item"]:has-text("Copy")',
-    ];
-    
-    let copyButton = null;
-    for (const selector of copyImageSelectors) {
-      copyButton = await page.$(selector);
-      if (copyButton) {
-        console.log(`[Capture] Found copy image button`);
-        await copyButton.click();
-        await page.waitForTimeout(500);
-        
-        // Try to read from clipboard
-        const clipboardImage = await page.evaluate(async () => {
-          try {
-            const items = await navigator.clipboard.read();
-            for (const item of items) {
-              for (const type of item.types) {
-                if (type.startsWith('image/')) {
-                  const blob = await item.getType(type);
-                  return new Promise<string>((resolve) => {
-                    const reader = new FileReader();
-                    reader.onloadend = () => resolve(reader.result as string);
-                    reader.readAsDataURL(blob);
-                  });
-                }
-              }
-            }
-          } catch (e) {
-            return null;
-          }
-          return null;
-        });
-        
-        if (clipboardImage) {
-          console.log(`[Capture] Got image from clipboard!`);
-          return clipboardImage;
-        }
-        break;
-      }
-    }
-    
-    // Close the menu if still open
-    await page.keyboard.press('Escape');
-    await page.waitForTimeout(200);
-  }
-  
-  // Fallback: Take a high-quality screenshot of the visible chart area
-  console.log(`[Capture] Using viewport screenshot...`);
-  
-  // Hide any UI elements that shouldn't be in the screenshot
+  // Hide any floating UI elements that shouldn't be in the screenshot
   await page.evaluate(() => {
-    // Hide floating elements, tooltips, etc.
-    const hideElements = document.querySelectorAll('[class*="popup"], [class*="tooltip"], [class*="menu"]:not([class*="pane"])');
-    hideElements.forEach(el => {
-      (el as HTMLElement).style.visibility = 'hidden';
+    const hideSelectors = [
+      '[class*="popup"]',
+      '[class*="tooltip"]', 
+      '[class*="dropdown-menu"]',
+      '[class*="context-menu"]',
+    ];
+    hideSelectors.forEach(selector => {
+      document.querySelectorAll(selector).forEach(el => {
+        (el as HTMLElement).style.setProperty('visibility', 'hidden', 'important');
+      });
     });
   });
   
   await page.waitForTimeout(100);
   
-  // Take screenshot of the full visible page
+  // Take screenshot of the full visible page (includes all indicator panes)
   const buffer = await page.screenshot({ 
     fullPage: false,
     type: 'png',
@@ -234,13 +163,20 @@ async function takeNativeSnapshot(page: Page): Promise<string> {
   
   // Restore hidden elements
   await page.evaluate(() => {
-    const elements = document.querySelectorAll('[class*="popup"], [class*="tooltip"], [class*="menu"]:not([class*="pane"])');
-    elements.forEach(el => {
-      (el as HTMLElement).style.visibility = '';
+    const hideSelectors = [
+      '[class*="popup"]',
+      '[class*="tooltip"]',
+      '[class*="dropdown-menu"]',
+      '[class*="context-menu"]',
+    ];
+    hideSelectors.forEach(selector => {
+      document.querySelectorAll(selector).forEach(el => {
+        (el as HTMLElement).style.removeProperty('visibility');
+      });
     });
   });
   
-  console.log(`[Capture] Screenshot taken`);
+  console.log(`[Capture] Screenshot taken successfully`);
   return `data:image/png;base64,${buffer.toString('base64')}`;
 }
 
