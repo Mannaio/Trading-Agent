@@ -74,7 +74,7 @@ export function AnalysisForm({ onSubmit, isLoading }: AnalysisFormProps) {
   const handleCapture = useCallback(async () => {
     setCapturing(true);
     try {
-      const res = await fetch(`/capture/capture?symbol=${symbol}`);
+      const res = await fetch(`/capture?symbol=${symbol}`);
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error((data as { error?: string }).error ?? `Capture failed (${res.status})`);
