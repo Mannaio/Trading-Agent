@@ -69,76 +69,68 @@ export async function captureCharts(options: CaptureOptions = {}): Promise<Captu
 }
 
 async function takeNativeSnapshot(page: Page): Promise<string> {
-  // Method 1: Use Alt+S keyboard shortcut to open snapshot menu
-  // Then click "Copy image" or intercept the canvas
+  // The FULL chart layout container includes the main chart + all indicator panes (RSI, DRO, etc.)
+  // We need to capture the entire layout, not just .chart-markup-table
   
-  // Click on the camera icon in the toolbar
-  const cameraButton = await page.$('[data-name="take-screenshot"]');
+  // Selector priority for the full chart layout:
+  // 1. .layout__area--center contains the entire chart area with all panes
+  // 2. .chart-container or similar wrapper
+  // 3. The main chart group that includes indicator panes
   
-  if (cameraButton) {
-    await cameraButton.click();
-    await page.waitForTimeout(300);
-  } else {
-    // Fallback: use keyboard shortcut Alt+S
-    await page.keyboard.press('Alt+s');
-    await page.waitForTimeout(300);
-  }
+  const fullChartSelectors = [
+    '.layout__area--center',           // Main chart area including all panes
+    '[class*="chart-container"]',      // Chart container
+    '.chart-gui-wrapper',              // GUI wrapper
+    '#overlap-manager-root',           // Sometimes wraps everything
+  ];
 
-  // Wait for the snapshot menu to appear and click "Copy image to clipboard"
-  // or "Download image" depending on what's available
-  const copyImageBtn = await page.$('div[data-name="copy-image-to-clipboard"]');
-  
-  if (copyImageBtn) {
-    // Use clipboard approach - copy image then read it
-    await copyImageBtn.click();
-    await page.waitForTimeout(500);
-    
-    // Read image from clipboard using page.evaluate
-    const base64 = await page.evaluate(async () => {
-      try {
-        const items = await navigator.clipboard.read();
-        for (const item of items) {
-          for (const type of item.types) {
-            if (type.startsWith('image/')) {
-              const blob = await item.getType(type);
-              return new Promise<string>((resolve) => {
-                const reader = new FileReader();
-                reader.onloadend = () => resolve(reader.result as string);
-                reader.readAsDataURL(blob);
-              });
-            }
-          }
-        }
-      } catch (e) {
-        console.error('Clipboard read failed:', e);
-      }
-      return null;
-    });
-
-    if (base64) {
-      console.log(`[Capture] Got image from clipboard`);
-      return base64;
+  // Try to find the full chart container
+  let chartContainer = null;
+  for (const selector of fullChartSelectors) {
+    chartContainer = await page.$(selector);
+    if (chartContainer) {
+      console.log(`[Capture] Found chart container with selector: ${selector}`);
+      break;
     }
   }
 
-  // Fallback: Extract image directly from TradingView's canvas
-  console.log(`[Capture] Using canvas extraction fallback...`);
+  if (chartContainer) {
+    // Take a screenshot of the entire chart layout (includes RSI, DRO, etc.)
+    console.log(`[Capture] Taking screenshot of full chart layout...`);
+    const buffer = await chartContainer.screenshot();
+    return `data:image/png;base64,${buffer.toString('base64')}`;
+  }
+
+  // Fallback: Try to get all canvas elements from ALL chart panes and combine them
+  console.log(`[Capture] Using multi-pane canvas extraction...`);
   
-  // Close any open menu first
-  await page.keyboard.press('Escape');
-  await page.waitForTimeout(200);
-  
-  // Get the chart canvas and convert to base64
   const base64 = await page.evaluate(() => {
-    // TradingView renders charts to canvas elements
-    const canvases = document.querySelectorAll('.chart-markup-table canvas');
-    if (canvases.length === 0) return null;
+    // Find the main layout area that contains all chart panes
+    const layoutArea = document.querySelector('.layout__area--center') as HTMLElement;
+    if (!layoutArea) {
+      // Fallback to chart-markup-table if layout area not found
+      const chartTable = document.querySelector('.chart-markup-table') as HTMLElement;
+      if (!chartTable) return null;
+      
+      const rect = chartTable.getBoundingClientRect();
+      const canvas = document.createElement('canvas');
+      canvas.width = rect.width * window.devicePixelRatio;
+      canvas.height = rect.height * window.devicePixelRatio;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return null;
+      
+      ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+      
+      document.querySelectorAll('.chart-markup-table canvas').forEach((c) => {
+        const htmlCanvas = c as HTMLCanvasElement;
+        const canvasRect = htmlCanvas.getBoundingClientRect();
+        ctx.drawImage(htmlCanvas, canvasRect.left - rect.left, canvasRect.top - rect.top);
+      });
+      
+      return canvas.toDataURL('image/png');
+    }
     
-    // Create a combined canvas with all layers
-    const container = document.querySelector('.chart-markup-table') as HTMLElement;
-    if (!container) return null;
-    
-    const rect = container.getBoundingClientRect();
+    const rect = layoutArea.getBoundingClientRect();
     const combinedCanvas = document.createElement('canvas');
     combinedCanvas.width = rect.width * window.devicePixelRatio;
     combinedCanvas.height = rect.height * window.devicePixelRatio;
@@ -147,27 +139,33 @@ async function takeNativeSnapshot(page: Page): Promise<string> {
     
     ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
     
-    // Draw each canvas layer
-    canvases.forEach((canvas) => {
+    // Get ALL canvases in the layout area (main chart + indicator panes)
+    const allCanvases = layoutArea.querySelectorAll('canvas');
+    console.log(`Found ${allCanvases.length} canvas elements`);
+    
+    allCanvases.forEach((canvas) => {
       const c = canvas as HTMLCanvasElement;
       const canvasRect = c.getBoundingClientRect();
       const x = canvasRect.left - rect.left;
       const y = canvasRect.top - rect.top;
-      ctx.drawImage(c, x, y, canvasRect.width, canvasRect.height);
+      try {
+        ctx.drawImage(c, x, y, canvasRect.width, canvasRect.height);
+      } catch (e) {
+        // Some canvases might be tainted, skip them
+      }
     });
     
     return combinedCanvas.toDataURL('image/png');
   });
 
   if (base64) {
-    console.log(`[Capture] Got image from canvas extraction`);
+    console.log(`[Capture] Got image from multi-pane canvas extraction`);
     return base64;
   }
 
-  // Last resort: Playwright screenshot
-  console.log(`[Capture] Using Playwright screenshot as last resort...`);
-  const chartEl = await page.$('.chart-markup-table');
-  const buffer = chartEl ? await chartEl.screenshot() : await page.screenshot();
+  // Last resort: Full page screenshot (cropped to visible area)
+  console.log(`[Capture] Using full page screenshot as last resort...`);
+  const buffer = await page.screenshot({ fullPage: false });
   return `data:image/png;base64,${buffer.toString('base64')}`;
 }
 
