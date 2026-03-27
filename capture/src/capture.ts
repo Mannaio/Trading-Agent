@@ -17,8 +17,8 @@ const TIMEFRAMES = [
   { label: '15m', selector: '[data-value="15"]' },
 ];
 
-const CHART_RENDER_WAIT_MS = 2000;
 const SYMBOL_SWITCH_WAIT_MS = 2000;
+const MAX_LOADING_WAIT_MS = 10000; // Max time to wait for chart to load
 
 export async function captureCharts(options: CaptureOptions = {}): Promise<CaptureResult> {
   const cdpUrl = options.cdpUrl ?? 'http://localhost:9222';
@@ -50,10 +50,13 @@ export async function captureCharts(options: CaptureOptions = {}): Promise<Captu
     for (const tf of TIMEFRAMES) {
       console.log(`[Capture] Switching to timeframe: ${tf.label}`);
       await switchTimeframe(tvPage, tf.selector, tf.label);
-      await tvPage.waitForTimeout(CHART_RENDER_WAIT_MS);
+      
+      // Wait for chart to fully load (indicators, candles, etc.)
+      console.log(`[Capture] Waiting for chart to fully render...`);
+      await waitForChartToLoad(tvPage);
 
       // Use TradingView's native snapshot feature
-      console.log(`[Capture] Taking native TradingView snapshot for ${tf.label}...`);
+      console.log(`[Capture] Taking snapshot for ${tf.label}...`);
       const base64 = await takeNativeSnapshot(tvPage);
       screenshots.push(base64);
     }
@@ -66,6 +69,70 @@ export async function captureCharts(options: CaptureOptions = {}): Promise<Captu
   } finally {
     browser.close();
   }
+}
+
+async function waitForChartToLoad(page: Page): Promise<void> {
+  const startTime = Date.now();
+  
+  // Wait for loading indicators to disappear and chart to stabilize
+  while (Date.now() - startTime < MAX_LOADING_WAIT_MS) {
+    const isLoading = await page.evaluate(() => {
+      // Check for TradingView loading indicators
+      const loadingSpinners = document.querySelectorAll(
+        '[class*="loading"], [class*="spinner"], [class*="loader"], .tv-spinner'
+      );
+      
+      // Check if any loading element is visible
+      for (const el of loadingSpinners) {
+        const style = window.getComputedStyle(el);
+        if (style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0') {
+          return true;
+        }
+      }
+      
+      // Check for "Loading..." text
+      const loadingText = document.querySelector('[class*="loading"]');
+      if (loadingText?.textContent?.toLowerCase().includes('loading')) {
+        return true;
+      }
+      
+      // Check if chart data is present (candles rendered)
+      const canvases = document.querySelectorAll('.layout__area--center canvas');
+      if (canvases.length === 0) {
+        return true; // No canvases yet, still loading
+      }
+      
+      return false;
+    });
+
+    if (!isLoading) {
+      // Chart appears loaded, wait a bit more for indicators to render
+      console.log(`[Capture] Chart loaded, waiting for indicators to render...`);
+      await page.waitForTimeout(1500);
+      
+      // Double-check that values are visible (RSI, etc.)
+      const hasIndicatorValues = await page.evaluate(() => {
+        // Look for indicator value displays in the legend/header
+        const indicatorLabels = document.querySelectorAll('[class*="valuesWrapper"], [class*="legend"], [class*="pane-legend"]');
+        return indicatorLabels.length > 0;
+      });
+      
+      if (hasIndicatorValues) {
+        console.log(`[Capture] Indicators rendered successfully`);
+      } else {
+        console.log(`[Capture] Warning: Could not confirm indicator values are visible`);
+      }
+      
+      return;
+    }
+
+    // Still loading, wait and check again
+    await page.waitForTimeout(200);
+  }
+
+  console.log(`[Capture] Warning: Chart may not be fully loaded (timeout reached)`);
+  // Wait a bit more anyway
+  await page.waitForTimeout(2000);
 }
 
 async function takeNativeSnapshot(page: Page): Promise<string> {
