@@ -82,72 +82,68 @@ async function findTradingViewTab(
 }
 
 async function switchSymbol(page: Page, symbol: string): Promise<void> {
-  console.log(`[Capture] Switching to symbol: ${symbol}`);
+  console.log(`[Capture] === SWITCHING SYMBOL TO: ${symbol} ===`);
 
-  // First, check what symbol is currently displayed
-  const currentSymbol = await getCurrentSymbol(page);
-  console.log(`[Capture] Current symbol in TradingView: ${currentSymbol}`);
+  // Step 1: Click on the symbol in the top-left to open Symbol Search modal
+  // The symbol button is in the header toolbar
+  const symbolButton = await page.$('#header-toolbar-symbol-search');
   
-  // If already on the right symbol, skip
-  if (currentSymbol && currentSymbol.toUpperCase().includes(symbol.toUpperCase())) {
-    console.log(`[Capture] Already on ${symbol}, skipping switch`);
-    return;
+  if (!symbolButton) {
+    console.log(`[Capture] ERROR: Could not find symbol button in header`);
+    throw new Error('Could not find TradingView symbol button');
   }
 
-  // Method 1: Click on the symbol display in the header
-  // TradingView has the symbol name as a clickable button
-  const symbolButton = await page.$('[data-name="legend-source-item"] [data-name="legend-series-item"]');
-  const headerSymbol = await page.$('#header-toolbar-symbol-search');
-  const symbolTitle = await page.$('[class*="titleWrapper"] [class*="title"]');
-  
-  const buttonToClick = symbolButton || headerSymbol || symbolTitle;
-  
-  if (buttonToClick) {
-    console.log(`[Capture] Clicking symbol button to open search...`);
-    await buttonToClick.click();
-    await page.waitForTimeout(500);
-  } else {
-    console.log(`[Capture] No symbol button found, trying keyboard shortcut...`);
-    // Focus the chart first, then use keyboard
-    await page.click('body');
-    await page.waitForTimeout(100);
-    await page.keyboard.press('s'); // 's' opens symbol search in TradingView
-    await page.waitForTimeout(500);
-  }
+  console.log(`[Capture] Step 1: Clicking symbol button...`);
+  await symbolButton.click();
+  await page.waitForTimeout(500);
 
-  // Wait for the search dialog/input to appear
+  // Step 2: Wait for the Symbol Search modal to open and find the input
+  console.log(`[Capture] Step 2: Waiting for Symbol Search modal...`);
+  
+  // The modal has a search input - try multiple selectors
   const searchInput = await page.waitForSelector(
-    'input[type="text"][class*="search"], input[data-role="search"], [class*="searchInput"] input, input[placeholder*="Search"], input[placeholder*="Symbol"]',
+    '[data-dialog-name="Symbol Search"] input, ' +
+    '[aria-label="Symbol Search"] input, ' + 
+    'div[class*="dialog"] input[type="text"], ' +
+    'input[placeholder*="Search"], ' +
+    'input[placeholder*="Symbol"]',
     { timeout: 3000, state: 'visible' }
   ).catch(() => null);
 
-  if (searchInput) {
-    console.log(`[Capture] Found search input, typing symbol...`);
-    await searchInput.click();
-    await page.waitForTimeout(100);
-    
-    // Clear and type
-    await searchInput.fill('');
-    await searchInput.fill(symbol);
-    console.log(`[Capture] Typed "${symbol}", waiting for results...`);
-    await page.waitForTimeout(1000);
-    
-    // Press Enter or click first result
-    await page.keyboard.press('Enter');
-    console.log(`[Capture] Pressed Enter, waiting for chart to load...`);
+  if (!searchInput) {
+    console.log(`[Capture] ERROR: Could not find search input in modal`);
+    // Try to close the dialog and abort
+    await page.keyboard.press('Escape');
+    throw new Error('Could not find symbol search input');
+  }
+
+  // Step 3: Clear the input and type the symbol
+  console.log(`[Capture] Step 3: Clearing input and typing "${symbol}"...`);
+  await searchInput.click({ clickCount: 3 }); // Triple-click to select all
+  await page.waitForTimeout(100);
+  await searchInput.fill(symbol);
+  await page.waitForTimeout(800); // Wait for search results to load
+
+  // Step 4: Click the first result or press Enter
+  console.log(`[Capture] Step 4: Selecting first result...`);
+  
+  // Try to find and click the first result row
+  const firstResult = await page.$('[data-role="list"] [data-active="true"], [class*="listContainer"] > div:first-child, [class*="itemRow"]:first-child');
+  
+  if (firstResult) {
+    console.log(`[Capture] Found first result, clicking...`);
+    await firstResult.click();
   } else {
-    console.log(`[Capture] Could not find search input, trying keyboard input...`);
-    // Just type directly (search dialog might already be focused)
-    await page.keyboard.type(symbol, { delay: 50 });
-    await page.waitForTimeout(800);
+    console.log(`[Capture] No result row found, pressing Enter...`);
     await page.keyboard.press('Enter');
   }
 
+  console.log(`[Capture] Waiting for chart to load new symbol...`);
   await page.waitForTimeout(SYMBOL_SWITCH_WAIT_MS);
-  
-  // Verify the switch
+
+  // Verify
   const newSymbol = await getCurrentSymbol(page);
-  console.log(`[Capture] After switch, symbol is: ${newSymbol}`);
+  console.log(`[Capture] === DONE. Chart now shows: ${newSymbol} ===`);
 }
 
 async function getCurrentSymbol(page: Page): Promise<string | null> {
