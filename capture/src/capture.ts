@@ -72,167 +72,175 @@ export async function captureCharts(options: CaptureOptions = {}): Promise<Captu
 }
 
 async function waitForChartToLoad(page: Page): Promise<void> {
-  const startTime = Date.now();
+  console.log(`[Capture] Waiting for chart to fully load...`);
   
-  // Wait for loading indicators to disappear and chart to stabilize
-  while (Date.now() - startTime < MAX_LOADING_WAIT_MS) {
-    const isLoading = await page.evaluate(() => {
-      // Check for TradingView loading indicators
-      const loadingSpinners = document.querySelectorAll(
-        '[class*="loading"], [class*="spinner"], [class*="loader"], .tv-spinner'
-      );
+  // Step 1: Wait for any loading spinners to disappear
+  await page.waitForTimeout(1000);
+  
+  // Step 2: Wait for the chart to stop updating (network idle)
+  try {
+    await page.waitForLoadState('networkidle', { timeout: 5000 });
+    console.log(`[Capture] Network idle reached`);
+  } catch {
+    console.log(`[Capture] Network idle timeout, continuing...`);
+  }
+  
+  // Step 3: Wait for indicator data to be rendered
+  // Check that RSI/DRO values are visible in the indicator panes
+  const maxAttempts = 15;
+  for (let i = 0; i < maxAttempts; i++) {
+    const indicatorsReady = await page.evaluate(() => {
+      // Look for indicator value text in the pane legends
+      // TradingView shows values like "RSI (2, close, SMA, 14, 2) 45.67"
+      const panes = document.querySelectorAll('[class*="pane"]');
+      let rsiFound = false;
+      let droFound = false;
       
-      // Check if any loading element is visible
-      for (const el of loadingSpinners) {
-        const style = window.getComputedStyle(el);
-        if (style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0') {
-          return true;
+      panes.forEach(pane => {
+        const text = pane.textContent || '';
+        if (text.includes('RSI') && /\d+\.\d+/.test(text)) {
+          rsiFound = true;
         }
-      }
-      
-      // Check for "Loading..." text
-      const loadingText = document.querySelector('[class*="loading"]');
-      if (loadingText?.textContent?.toLowerCase().includes('loading')) {
-        return true;
-      }
-      
-      // Check if chart data is present (candles rendered)
-      const canvases = document.querySelectorAll('.layout__area--center canvas');
-      if (canvases.length === 0) {
-        return true; // No canvases yet, still loading
-      }
-      
-      return false;
-    });
-
-    if (!isLoading) {
-      // Chart appears loaded, wait a bit more for indicators to render
-      console.log(`[Capture] Chart loaded, waiting for indicators to render...`);
-      await page.waitForTimeout(1500);
-      
-      // Double-check that values are visible (RSI, etc.)
-      const hasIndicatorValues = await page.evaluate(() => {
-        // Look for indicator value displays in the legend/header
-        const indicatorLabels = document.querySelectorAll('[class*="valuesWrapper"], [class*="legend"], [class*="pane-legend"]');
-        return indicatorLabels.length > 0;
+        if ((text.includes('DRO') || text.includes('Detrended')) && /\d+/.test(text)) {
+          droFound = true;
+        }
       });
       
-      if (hasIndicatorValues) {
-        console.log(`[Capture] Indicators rendered successfully`);
-      } else {
-        console.log(`[Capture] Warning: Could not confirm indicator values are visible`);
-      }
+      // Also check for any numeric values in legend areas
+      const legends = document.querySelectorAll('[class*="legend"], [class*="valuesWrapper"]');
+      let hasNumericValues = false;
+      legends.forEach(legend => {
+        if (/\d+\.\d{2}/.test(legend.textContent || '')) {
+          hasNumericValues = true;
+        }
+      });
       
+      return { rsiFound, droFound, hasNumericValues };
+    });
+    
+    console.log(`[Capture] Check ${i + 1}/${maxAttempts}: RSI=${indicatorsReady.rsiFound}, DRO=${indicatorsReady.droFound}, values=${indicatorsReady.hasNumericValues}`);
+    
+    if (indicatorsReady.hasNumericValues) {
+      console.log(`[Capture] Indicators appear to be loaded`);
+      // Extra wait to ensure everything is rendered
+      await page.waitForTimeout(2000);
       return;
     }
-
-    // Still loading, wait and check again
-    await page.waitForTimeout(200);
+    
+    await page.waitForTimeout(500);
   }
-
-  console.log(`[Capture] Warning: Chart may not be fully loaded (timeout reached)`);
-  // Wait a bit more anyway
-  await page.waitForTimeout(2000);
+  
+  // Final fallback wait
+  console.log(`[Capture] Indicators check timed out, adding extra wait...`);
+  await page.waitForTimeout(3000);
 }
 
 async function takeNativeSnapshot(page: Page): Promise<string> {
-  // The FULL chart layout container includes the main chart + all indicator panes (RSI, DRO, etc.)
-  // We need to capture the entire layout, not just .chart-markup-table
+  // Use TradingView's native "Take a snapshot" feature (camera icon)
+  // This produces the same high-quality image as manually clicking the camera
   
-  // Selector priority for the full chart layout:
-  // 1. .layout__area--center contains the entire chart area with all panes
-  // 2. .chart-container or similar wrapper
-  // 3. The main chart group that includes indicator panes
+  console.log(`[Capture] Looking for camera button...`);
   
-  const fullChartSelectors = [
-    '.layout__area--center',           // Main chart area including all panes
-    '[class*="chart-container"]',      // Chart container
-    '.chart-gui-wrapper',              // GUI wrapper
-    '#overlap-manager-root',           // Sometimes wraps everything
+  // Find and click the camera icon
+  const cameraSelectors = [
+    '[data-name="take-screenshot"]',
+    '[aria-label="Take a snapshot"]',
+    'button[class*="screenshot"]',
+    '#header-toolbar-screenshot',
   ];
-
-  // Try to find the full chart container
-  let chartContainer = null;
-  for (const selector of fullChartSelectors) {
-    chartContainer = await page.$(selector);
-    if (chartContainer) {
-      console.log(`[Capture] Found chart container with selector: ${selector}`);
+  
+  let cameraButton = null;
+  for (const selector of cameraSelectors) {
+    cameraButton = await page.$(selector);
+    if (cameraButton) {
+      console.log(`[Capture] Found camera button: ${selector}`);
       break;
     }
   }
-
-  if (chartContainer) {
-    // Take a screenshot of the entire chart layout (includes RSI, DRO, etc.)
-    console.log(`[Capture] Taking screenshot of full chart layout...`);
-    const buffer = await chartContainer.screenshot();
-    return `data:image/png;base64,${buffer.toString('base64')}`;
-  }
-
-  // Fallback: Try to get all canvas elements from ALL chart panes and combine them
-  console.log(`[Capture] Using multi-pane canvas extraction...`);
   
-  const base64 = await page.evaluate(() => {
-    // Find the main layout area that contains all chart panes
-    const layoutArea = document.querySelector('.layout__area--center') as HTMLElement;
-    if (!layoutArea) {
-      // Fallback to chart-markup-table if layout area not found
-      const chartTable = document.querySelector('.chart-markup-table') as HTMLElement;
-      if (!chartTable) return null;
-      
-      const rect = chartTable.getBoundingClientRect();
-      const canvas = document.createElement('canvas');
-      canvas.width = rect.width * window.devicePixelRatio;
-      canvas.height = rect.height * window.devicePixelRatio;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return null;
-      
-      ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
-      
-      document.querySelectorAll('.chart-markup-table canvas').forEach((c) => {
-        const htmlCanvas = c as HTMLCanvasElement;
-        const canvasRect = htmlCanvas.getBoundingClientRect();
-        ctx.drawImage(htmlCanvas, canvasRect.left - rect.left, canvasRect.top - rect.top);
-      });
-      
-      return canvas.toDataURL('image/png');
+  if (cameraButton) {
+    await cameraButton.click();
+    await page.waitForTimeout(500);
+    
+    // Look for "Copy image" option in the dropdown menu
+    const copyImageSelectors = [
+      '[data-name="copy-image-to-clipboard"]',
+      'div[class*="menuItem"]:has-text("Copy image")',
+      '[class*="item"]:has-text("Copy")',
+    ];
+    
+    let copyButton = null;
+    for (const selector of copyImageSelectors) {
+      copyButton = await page.$(selector);
+      if (copyButton) {
+        console.log(`[Capture] Found copy image button`);
+        await copyButton.click();
+        await page.waitForTimeout(500);
+        
+        // Try to read from clipboard
+        const clipboardImage = await page.evaluate(async () => {
+          try {
+            const items = await navigator.clipboard.read();
+            for (const item of items) {
+              for (const type of item.types) {
+                if (type.startsWith('image/')) {
+                  const blob = await item.getType(type);
+                  return new Promise<string>((resolve) => {
+                    const reader = new FileReader();
+                    reader.onloadend = () => resolve(reader.result as string);
+                    reader.readAsDataURL(blob);
+                  });
+                }
+              }
+            }
+          } catch (e) {
+            return null;
+          }
+          return null;
+        });
+        
+        if (clipboardImage) {
+          console.log(`[Capture] Got image from clipboard!`);
+          return clipboardImage;
+        }
+        break;
+      }
     }
     
-    const rect = layoutArea.getBoundingClientRect();
-    const combinedCanvas = document.createElement('canvas');
-    combinedCanvas.width = rect.width * window.devicePixelRatio;
-    combinedCanvas.height = rect.height * window.devicePixelRatio;
-    const ctx = combinedCanvas.getContext('2d');
-    if (!ctx) return null;
-    
-    ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
-    
-    // Get ALL canvases in the layout area (main chart + indicator panes)
-    const allCanvases = layoutArea.querySelectorAll('canvas');
-    console.log(`Found ${allCanvases.length} canvas elements`);
-    
-    allCanvases.forEach((canvas) => {
-      const c = canvas as HTMLCanvasElement;
-      const canvasRect = c.getBoundingClientRect();
-      const x = canvasRect.left - rect.left;
-      const y = canvasRect.top - rect.top;
-      try {
-        ctx.drawImage(c, x, y, canvasRect.width, canvasRect.height);
-      } catch (e) {
-        // Some canvases might be tainted, skip them
-      }
-    });
-    
-    return combinedCanvas.toDataURL('image/png');
-  });
-
-  if (base64) {
-    console.log(`[Capture] Got image from multi-pane canvas extraction`);
-    return base64;
+    // Close the menu if still open
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(200);
   }
-
-  // Last resort: Full page screenshot (cropped to visible area)
-  console.log(`[Capture] Using full page screenshot as last resort...`);
-  const buffer = await page.screenshot({ fullPage: false });
+  
+  // Fallback: Take a high-quality screenshot of the visible chart area
+  console.log(`[Capture] Using viewport screenshot...`);
+  
+  // Hide any UI elements that shouldn't be in the screenshot
+  await page.evaluate(() => {
+    // Hide floating elements, tooltips, etc.
+    const hideElements = document.querySelectorAll('[class*="popup"], [class*="tooltip"], [class*="menu"]:not([class*="pane"])');
+    hideElements.forEach(el => {
+      (el as HTMLElement).style.visibility = 'hidden';
+    });
+  });
+  
+  await page.waitForTimeout(100);
+  
+  // Take screenshot of the full visible page
+  const buffer = await page.screenshot({ 
+    fullPage: false,
+    type: 'png',
+  });
+  
+  // Restore hidden elements
+  await page.evaluate(() => {
+    const elements = document.querySelectorAll('[class*="popup"], [class*="tooltip"], [class*="menu"]:not([class*="pane"])');
+    elements.forEach(el => {
+      (el as HTMLElement).style.visibility = '';
+    });
+  });
+  
+  console.log(`[Capture] Screenshot taken`);
   return `data:image/png;base64,${buffer.toString('base64')}`;
 }
 
