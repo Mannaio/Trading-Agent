@@ -79,10 +79,19 @@ export function AnalysisForm({ onSubmit, isLoading }: AnalysisFormProps) {
         const data = await res.json().catch(() => ({}));
         throw new Error((data as { error?: string }).error ?? `Capture failed (${res.status})`);
       }
-      const data: { screenshots: string[] } = await res.json();
+      const data: { screenshots: string[]; symbol?: string } = await res.json();
       if (data.screenshots.length === 0) {
         throw new Error('No screenshots returned');
       }
+
+      // Update symbol if the capture server returns one (syncs with TradingView)
+      if (data.symbol) {
+        const normalizedSymbol = data.symbol.toUpperCase().replace(/[^A-Z]/g, '');
+        if (normalizedSymbol === 'ETHUSDT' || normalizedSymbol === 'BTCUSDT' || normalizedSymbol === 'ETHBTC') {
+          setSymbol(normalizedSymbol);
+        }
+      }
+
       setEntries(
         data.screenshots.slice(0, MAX_SCREENSHOTS).map((dataUrl, index) => ({
           dataUrl,
