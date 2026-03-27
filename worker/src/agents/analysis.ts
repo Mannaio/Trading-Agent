@@ -122,7 +122,7 @@ YOUR JOB — follow this EXACT analysis order:
    c) **Price position relative to EMAs:** Above both, between them, or below both.
    d) **Interpret:** Wide EMA gap + price far from both EMAs = overextended, higher reversal probability. Tight EMA gap or recent cross = early trend, continuation likely. Price between the two EMAs = indecision or trend change. EMA 50 curving toward EMA 200 = trend weakening even if spread is still wide.
    e) If EMAs are not visible, skip this step.
-3. **RSI Validation:** Read the RSI value from each timeframe. CRITICAL: The RSI VALUE is displayed as a PURPLE/VIOLET COLORED NUMBER in the RSI indicator panel (e.g. "48.51" in purple text). This is the current RSI reading — look for this purple number, NOT numbers in the header. Does RSI confirm or challenge the DRO trend? Look for overbought (>70) / oversold (<30) levels and divergences with price. If RSI is not visible, use whatever momentum indicator IS visible to validate the trend.
+3. **RSI Validation:** Read the RSI value from each timeframe. Does RSI confirm or challenge the DRO trend? Look for overbought/oversold levels and divergences with price. If RSI is not visible, use whatever momentum indicator IS visible to validate the trend.
 4. **DRO Momentum (timing):** Read the DRO Oscillator value. Is it above/below zero? Crossing? Diverging from price? This tells you if momentum supports the cycle direction or is weakening. If the DRO Oscillator is not visible, use whatever oscillator IS visible for timing.
 5. **Combine:** Only after completing steps 1→2→3→4, synthesize into a directional prediction with probability. Pay special attention to EMA + DRO agreement: if EMA shows exhaustion (wide spread, price far from EMAs) AND DRO cycle is nearing a pivot → strong reversal signal, increase confidence. If EMA shows early trend (tight spread, recent cross) AND DRO is mid-cycle → continuation likely. If EMA and DRO disagree, note the conflict and reduce confidence.
 6. **User thesis:** Consider the user's reasoning — agree or disagree honestly.
@@ -133,7 +133,7 @@ IMPORTANT: If the screenshots show DIFFERENT indicators than DRO/RSI/EMA (e.g. M
 
 ANALYSIS FIELD REQUIREMENTS — each key in "analysis" (4h, 1h, 15m) MUST have these sub-fields:
 • **"ema"**: Read EMA 50 and EMA 200 NUMERICAL VALUES from that chart's header. State: (1) EMA 50 value, (2) EMA 200 value, (3) computed gap % = |EMA50−EMA200|/min × 100, classified strictly as: tight (<1%), moderate (1-3%), wide (>3%). Example: 0.64% = tight, 1.16% = moderate, 3.10% = wide. (4) crossover state — bullish or bearish, (5) price position — above both, between, or below both, (6) assessment. If EMAs not visible, say "EMAs not visible."
-• **"rsi"**: Read the RSI value from that chart. CRITICAL: Look for the PURPLE/VIOLET COLORED NUMBER displayed in the RSI indicator panel — this is the current RSI value (e.g. "48.51" shown in purple). Do NOT use the header numbers. State the exact purple number value, whether overbought (>70) / oversold (<30) / neutral, and any divergence with price. If RSI not visible, use whatever momentum indicator is shown.
+• **"rsi"**: Read the RSI value from that chart. State the value, whether overbought (>70) / oversold (<30) / neutral, and any divergence with price. If RSI not visible, use whatever momentum indicator is shown.
 • **"dro"**: State: (1) last pivot type — HIGH or LOW, (2) direction heading (opposite of pivot), (3) Mean half-cycle length, (4) bars since last pivot (from rightmost pivot to current bar — NOT numbers between past pivots), (5) cycle progress = bars-since-pivot / Mean as %. If DRO not visible, describe trend from available indicators.
 
 CONCLUSION FIELD — your "conclusion" MUST:
@@ -181,7 +181,7 @@ RULES
 • probability = how likely a 0.5% move in the predicted direction happens BEFORE 0.5% the other way.
 • Be honest — if signals conflict, use UNCLEAR and probability 40-55%.
 • Higher timeframe signals (4H) carry more weight than lower ones (15m).
-• READ RSI values from the screenshots — the RSI value is the PURPLE/VIOLET NUMBER displayed in the RSI indicator panel (e.g. "48.51" in purple text). Do NOT confuse this with header text. Divergences on 1H/4H are strong signals for scalp reversals.
+• READ RSI values from the screenshots — divergences on 1H/4H are strong signals for scalp reversals.
 • READ DRO values, ZigZag pivots, and the Mean half-cycle label directly from the screenshots. Compare bars-since-last-pivot to the Mean: if near 100% of the Mean from a HIGH → bias up (LOW reversal due); if near 100% from a LOW → bias down (HIGH reversal due). If past half-cycle distances are consistent (close to Mean), the cycle is reliable; if erratic, reduce confidence.
 • Stop-loss: 0.4-0.6% from entry — give the trade room to breathe without getting stopped by noise.
 • Take-profit: ~0.5-0.7% from entry.
