@@ -17,7 +17,7 @@ const TIMEFRAMES = [
   { label: '15m', selector: '[data-value="15"]' },
 ];
 
-const CHART_RENDER_WAIT_MS = 3000;
+const CHART_RENDER_WAIT_MS = 2000;
 const SYMBOL_SWITCH_WAIT_MS = 2000;
 
 export async function captureCharts(options: CaptureOptions = {}): Promise<CaptureResult> {
@@ -48,13 +48,13 @@ export async function captureCharts(options: CaptureOptions = {}): Promise<Captu
     const screenshots: string[] = [];
 
     for (const tf of TIMEFRAMES) {
+      console.log(`[Capture] Switching to timeframe: ${tf.label}`);
       await switchTimeframe(tvPage, tf.selector, tf.label);
       await tvPage.waitForTimeout(CHART_RENDER_WAIT_MS);
 
-      const chartEl = await tvPage.$('.chart-markup-table');
-      const buffer = chartEl ? await chartEl.screenshot() : await tvPage.screenshot();
-
-      const base64 = `data:image/png;base64,${buffer.toString('base64')}`;
+      // Use TradingView's native snapshot feature
+      console.log(`[Capture] Taking native TradingView snapshot for ${tf.label}...`);
+      const base64 = await takeNativeSnapshot(tvPage);
       screenshots.push(base64);
     }
 
@@ -66,6 +66,109 @@ export async function captureCharts(options: CaptureOptions = {}): Promise<Captu
   } finally {
     browser.close();
   }
+}
+
+async function takeNativeSnapshot(page: Page): Promise<string> {
+  // Method 1: Use Alt+S keyboard shortcut to open snapshot menu
+  // Then click "Copy image" or intercept the canvas
+  
+  // Click on the camera icon in the toolbar
+  const cameraButton = await page.$('[data-name="take-screenshot"]');
+  
+  if (cameraButton) {
+    await cameraButton.click();
+    await page.waitForTimeout(300);
+  } else {
+    // Fallback: use keyboard shortcut Alt+S
+    await page.keyboard.press('Alt+s');
+    await page.waitForTimeout(300);
+  }
+
+  // Wait for the snapshot menu to appear and click "Copy image to clipboard"
+  // or "Download image" depending on what's available
+  const copyImageBtn = await page.$('div[data-name="copy-image-to-clipboard"]');
+  
+  if (copyImageBtn) {
+    // Use clipboard approach - copy image then read it
+    await copyImageBtn.click();
+    await page.waitForTimeout(500);
+    
+    // Read image from clipboard using page.evaluate
+    const base64 = await page.evaluate(async () => {
+      try {
+        const items = await navigator.clipboard.read();
+        for (const item of items) {
+          for (const type of item.types) {
+            if (type.startsWith('image/')) {
+              const blob = await item.getType(type);
+              return new Promise<string>((resolve) => {
+                const reader = new FileReader();
+                reader.onloadend = () => resolve(reader.result as string);
+                reader.readAsDataURL(blob);
+              });
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Clipboard read failed:', e);
+      }
+      return null;
+    });
+
+    if (base64) {
+      console.log(`[Capture] Got image from clipboard`);
+      return base64;
+    }
+  }
+
+  // Fallback: Extract image directly from TradingView's canvas
+  console.log(`[Capture] Using canvas extraction fallback...`);
+  
+  // Close any open menu first
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(200);
+  
+  // Get the chart canvas and convert to base64
+  const base64 = await page.evaluate(() => {
+    // TradingView renders charts to canvas elements
+    const canvases = document.querySelectorAll('.chart-markup-table canvas');
+    if (canvases.length === 0) return null;
+    
+    // Create a combined canvas with all layers
+    const container = document.querySelector('.chart-markup-table') as HTMLElement;
+    if (!container) return null;
+    
+    const rect = container.getBoundingClientRect();
+    const combinedCanvas = document.createElement('canvas');
+    combinedCanvas.width = rect.width * window.devicePixelRatio;
+    combinedCanvas.height = rect.height * window.devicePixelRatio;
+    const ctx = combinedCanvas.getContext('2d');
+    if (!ctx) return null;
+    
+    ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+    
+    // Draw each canvas layer
+    canvases.forEach((canvas) => {
+      const c = canvas as HTMLCanvasElement;
+      const canvasRect = c.getBoundingClientRect();
+      const x = canvasRect.left - rect.left;
+      const y = canvasRect.top - rect.top;
+      ctx.drawImage(c, x, y, canvasRect.width, canvasRect.height);
+    });
+    
+    return combinedCanvas.toDataURL('image/png');
+  });
+
+  if (base64) {
+    console.log(`[Capture] Got image from canvas extraction`);
+    return base64;
+  }
+
+  // Last resort: Playwright screenshot
+  console.log(`[Capture] Using Playwright screenshot as last resort...`);
+  const chartEl = await page.$('.chart-markup-table');
+  const buffer = chartEl ? await chartEl.screenshot() : await page.screenshot();
+  return `data:image/png;base64,${buffer.toString('base64')}`;
 }
 
 async function findTradingViewTab(
