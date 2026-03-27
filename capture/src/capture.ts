@@ -82,35 +82,42 @@ async function findTradingViewTab(
 }
 
 async function switchSymbol(page: Page, symbol: string): Promise<void> {
-  // TradingView symbol search can be opened with keyboard shortcut or clicking symbol button
-  // We'll use the keyboard shortcut which is more reliable
-  await page.keyboard.press('.');
-  await page.waitForTimeout(300);
+  console.log(`[Capture] Switching to symbol: ${symbol}`);
 
-  // Wait for search dialog to appear
+  // Click on the symbol button in the header to open search
+  const symbolBtn = await page.$('#header-toolbar-symbol-search');
+  if (symbolBtn) {
+    await symbolBtn.click();
+    await page.waitForTimeout(500);
+  } else {
+    // Fallback: use keyboard shortcut
+    await page.keyboard.press('.');
+    await page.waitForTimeout(500);
+  }
+
+  // Wait for search input to appear and be focused
   const searchInput = await page.waitForSelector(
-    'input[data-role="search"], input[placeholder*="Search"], input[placeholder*="Symbol"]',
+    '[data-dialog-name="symbol-search-dialog"] input, input[data-role="search"]',
     { timeout: 3000 }
   ).catch(() => null);
 
   if (!searchInput) {
-    // Fallback: try clicking on the symbol button in the header
-    const symbolBtn = await page.$('#header-toolbar-symbol-search');
-    if (symbolBtn) {
-      await symbolBtn.click();
-      await page.waitForTimeout(300);
-    } else {
-      throw new Error('Could not open symbol search dialog');
-    }
+    console.warn('[Capture] Could not find symbol search input, continuing anyway...');
   }
 
-  // Clear existing text and type the new symbol
-  await page.keyboard.press('Control+a');
-  await page.keyboard.type(symbol, { delay: 50 });
-  await page.waitForTimeout(500);
+  // Triple-click to select all text in the input, then type new symbol
+  await page.keyboard.press('Home');
+  await page.keyboard.down('Shift');
+  await page.keyboard.press('End');
+  await page.keyboard.up('Shift');
+  await page.waitForTimeout(100);
+  
+  await page.keyboard.type(symbol, { delay: 30 });
+  await page.waitForTimeout(800);
 
   // Press Enter to select the first result
   await page.keyboard.press('Enter');
+  console.log(`[Capture] Symbol switch initiated, waiting for chart to load...`);
   await page.waitForTimeout(SYMBOL_SWITCH_WAIT_MS);
 }
 
