@@ -84,41 +84,70 @@ async function findTradingViewTab(
 async function switchSymbol(page: Page, symbol: string): Promise<void> {
   console.log(`[Capture] Switching to symbol: ${symbol}`);
 
-  // Click on the symbol button in the header to open search
-  const symbolBtn = await page.$('#header-toolbar-symbol-search');
-  if (symbolBtn) {
-    await symbolBtn.click();
+  // First, check what symbol is currently displayed
+  const currentSymbol = await getCurrentSymbol(page);
+  console.log(`[Capture] Current symbol in TradingView: ${currentSymbol}`);
+  
+  // If already on the right symbol, skip
+  if (currentSymbol && currentSymbol.toUpperCase().includes(symbol.toUpperCase())) {
+    console.log(`[Capture] Already on ${symbol}, skipping switch`);
+    return;
+  }
+
+  // Method 1: Click on the symbol display in the header
+  // TradingView has the symbol name as a clickable button
+  const symbolButton = await page.$('[data-name="legend-source-item"] [data-name="legend-series-item"]');
+  const headerSymbol = await page.$('#header-toolbar-symbol-search');
+  const symbolTitle = await page.$('[class*="titleWrapper"] [class*="title"]');
+  
+  const buttonToClick = symbolButton || headerSymbol || symbolTitle;
+  
+  if (buttonToClick) {
+    console.log(`[Capture] Clicking symbol button to open search...`);
+    await buttonToClick.click();
     await page.waitForTimeout(500);
   } else {
-    // Fallback: use keyboard shortcut
-    await page.keyboard.press('.');
+    console.log(`[Capture] No symbol button found, trying keyboard shortcut...`);
+    // Focus the chart first, then use keyboard
+    await page.click('body');
+    await page.waitForTimeout(100);
+    await page.keyboard.press('s'); // 's' opens symbol search in TradingView
     await page.waitForTimeout(500);
   }
 
-  // Wait for search input to appear and be focused
+  // Wait for the search dialog/input to appear
   const searchInput = await page.waitForSelector(
-    '[data-dialog-name="symbol-search-dialog"] input, input[data-role="search"]',
-    { timeout: 3000 }
+    'input[type="text"][class*="search"], input[data-role="search"], [class*="searchInput"] input, input[placeholder*="Search"], input[placeholder*="Symbol"]',
+    { timeout: 3000, state: 'visible' }
   ).catch(() => null);
 
-  if (!searchInput) {
-    console.warn('[Capture] Could not find symbol search input, continuing anyway...');
+  if (searchInput) {
+    console.log(`[Capture] Found search input, typing symbol...`);
+    await searchInput.click();
+    await page.waitForTimeout(100);
+    
+    // Clear and type
+    await searchInput.fill('');
+    await searchInput.fill(symbol);
+    console.log(`[Capture] Typed "${symbol}", waiting for results...`);
+    await page.waitForTimeout(1000);
+    
+    // Press Enter or click first result
+    await page.keyboard.press('Enter');
+    console.log(`[Capture] Pressed Enter, waiting for chart to load...`);
+  } else {
+    console.log(`[Capture] Could not find search input, trying keyboard input...`);
+    // Just type directly (search dialog might already be focused)
+    await page.keyboard.type(symbol, { delay: 50 });
+    await page.waitForTimeout(800);
+    await page.keyboard.press('Enter');
   }
 
-  // Triple-click to select all text in the input, then type new symbol
-  await page.keyboard.press('Home');
-  await page.keyboard.down('Shift');
-  await page.keyboard.press('End');
-  await page.keyboard.up('Shift');
-  await page.waitForTimeout(100);
-  
-  await page.keyboard.type(symbol, { delay: 30 });
-  await page.waitForTimeout(800);
-
-  // Press Enter to select the first result
-  await page.keyboard.press('Enter');
-  console.log(`[Capture] Symbol switch initiated, waiting for chart to load...`);
   await page.waitForTimeout(SYMBOL_SWITCH_WAIT_MS);
+  
+  // Verify the switch
+  const newSymbol = await getCurrentSymbol(page);
+  console.log(`[Capture] After switch, symbol is: ${newSymbol}`);
 }
 
 async function getCurrentSymbol(page: Page): Promise<string | null> {
