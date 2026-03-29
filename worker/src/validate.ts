@@ -85,6 +85,12 @@ export function validateRequest(body: unknown): AnalysisRequest {
         }
         meta.ema200 = m.ema200;
       }
+      if (m.rsi !== undefined && m.rsi !== null) {
+        if (typeof m.rsi !== 'number' || isNaN(m.rsi) || m.rsi < 0 || m.rsi > 100) {
+          throw new ValidationError(`screenshotsMeta[${i}].rsi must be a number between 0 and 100`);
+        }
+        meta.rsi = m.rsi;
+      }
       return meta;
     });
   }

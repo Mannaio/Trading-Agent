@@ -64,6 +64,16 @@ export class AnalysisAgent {
       text += `\nMY REASONING / THESIS:\n${req.userReasoning.trim()}\n`;
     }
 
+    // Structured RSI values extracted from TradingView DOM (precise, not visual)
+    const rsiByTimeframe = this.collectRsiValues(req);
+    if (Object.keys(rsiByTimeframe).length > 0) {
+      text += `\nEXACT RSI VALUES (extracted programmatically from TradingView — use these instead of estimating from the chart image):`;
+      for (const [tf, val] of Object.entries(rsiByTimeframe)) {
+        text += `\n  ${tf.toUpperCase().replace('M', 'm')}: RSI = ${val.toFixed(2)}`;
+      }
+      text += `\n`;
+    }
+
     if (req.indicators) {
       const { trend } = req.indicators;
       text += `\nUSER-PROVIDED DATA:`;
@@ -84,6 +94,17 @@ export class AnalysisAgent {
     userContent.push({ type: 'text', text });
 
     return [system, { role: 'user', content: userContent }];
+  }
+
+  private collectRsiValues(req: AnalysisRequest): Record<string, number> {
+    const result: Record<string, number> = {};
+    if (!req.screenshotsMeta) return result;
+    for (const m of req.screenshotsMeta) {
+      if (m.rsi != null) {
+        result[m.timeframe] = m.rsi;
+      }
+    }
+    return result;
   }
 
   // ─── System prompt ───
@@ -122,7 +143,7 @@ YOUR JOB — follow this EXACT analysis order:
    c) **Price position relative to EMAs:** Above both, between them, or below both.
    d) **Interpret:** Wide EMA gap + price far from both EMAs = overextended, higher reversal probability. Tight EMA gap or recent cross = early trend, continuation likely. Price between the two EMAs = indecision or trend change. EMA 50 curving toward EMA 200 = trend weakening even if spread is still wide.
    e) If EMAs are not visible, skip this step.
-3. **RSI Validation:** Read the RSI value from each timeframe. Does RSI confirm or challenge the DRO trend? Look for overbought/oversold levels and divergences with price. If RSI is not visible, use whatever momentum indicator IS visible to validate the trend.
+3. **RSI Validation:** If EXACT RSI VALUES are provided in the user message, use those numbers directly — they are extracted programmatically from TradingView and are precise. Do NOT try to read RSI from the chart image when exact values are provided. If no exact values are provided, read the RSI value visually from each timeframe. Does RSI confirm or challenge the DRO trend? Look for overbought/oversold levels and divergences with price. If RSI is not visible, use whatever momentum indicator IS visible to validate the trend.
 4. **DRO Momentum (timing):** Read the DRO Oscillator value. Is it above/below zero? Crossing? Diverging from price? This tells you if momentum supports the cycle direction or is weakening. If the DRO Oscillator is not visible, use whatever oscillator IS visible for timing.
 5. **Combine:** Only after completing steps 1→2→3→4, synthesize into a directional prediction with probability. Pay special attention to EMA + DRO agreement: if EMA shows exhaustion (wide spread, price far from EMAs) AND DRO cycle is nearing a pivot → strong reversal signal, increase confidence. If EMA shows early trend (tight spread, recent cross) AND DRO is mid-cycle → continuation likely. If EMA and DRO disagree, note the conflict and reduce confidence.
 6. **User thesis:** Consider the user's reasoning — agree or disagree honestly.

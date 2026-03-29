@@ -8,6 +8,7 @@ export interface CaptureOptions {
 export interface CaptureResult {
   screenshots: string[]; // base64 data URLs, ordered [4H, 1H, 15m]
   timeframes: string[]; // ["4h", "1h", "15m"]
+  rsiValues: (number | null)[]; // RSI values per timeframe, extracted from DOM
   symbol: string; // the symbol that was captured
 }
 
@@ -46,24 +47,29 @@ export async function captureCharts(options: CaptureOptions = {}): Promise<Captu
     const capturedSymbol = await getCurrentSymbol(tvPage) ?? requestedSymbol ?? 'UNKNOWN';
 
     const screenshots: string[] = [];
+    const rsiValues: (number | null)[] = [];
 
     for (const tf of TIMEFRAMES) {
       console.log(`[Capture] Switching to timeframe: ${tf.label}`);
       await switchTimeframe(tvPage, tf.selector, tf.label);
       
-      // Wait for chart to fully load (indicators, candles, etc.)
       console.log(`[Capture] Waiting for chart to fully render...`);
       await waitForChartToLoad(tvPage);
 
-      // Use TradingView's native snapshot feature
       console.log(`[Capture] Taking snapshot for ${tf.label}...`);
       const base64 = await takeNativeSnapshot(tvPage);
       screenshots.push(base64);
+
+      // Extract RSI immediately after screenshot so the value matches what's in the image
+      const rsi = await extractRsiValue(tvPage);
+      console.log(`[Capture] RSI for ${tf.label}: ${rsi ?? 'not found'}`);
+      rsiValues.push(rsi);
     }
 
     return {
       screenshots,
       timeframes: TIMEFRAMES.map((tf) => tf.label),
+      rsiValues,
       symbol: capturedSymbol,
     };
   } finally {
@@ -178,6 +184,35 @@ async function takeNativeSnapshot(page: Page): Promise<string> {
   
   console.log(`[Capture] Screenshot taken successfully`);
   return `data:image/png;base64,${buffer.toString('base64')}`;
+}
+
+async function extractRsiValue(page: Page): Promise<number | null> {
+  return page.evaluate(() => {
+    // TradingView renders RSI study in a separate pane with legend text like:
+    // "RSI2close70.66∅∅..." where 70.66 is the current RSI value.
+    // The study items have class containing "study" and "item".
+    const studyItems = document.querySelectorAll('[class*="study"]');
+    for (const item of studyItems) {
+      const text = item.textContent || '';
+      // Match pattern: RSI followed by params, then "close" and a decimal number
+      const match = text.match(/RSI\d*close([\d.]+)/);
+      if (match) {
+        const val = parseFloat(match[1]);
+        if (!isNaN(val) && val >= 0 && val <= 100) return val;
+      }
+    }
+    // Fallback: search all legend/values wrappers
+    const legends = document.querySelectorAll('[class*="legend"], [class*="valuesWrapper"]');
+    for (const legend of legends) {
+      const text = legend.textContent || '';
+      const match = text.match(/RSI\d*close([\d.]+)/);
+      if (match) {
+        const val = parseFloat(match[1]);
+        if (!isNaN(val) && val >= 0 && val <= 100) return val;
+      }
+    }
+    return null;
+  });
 }
 
 async function findTradingViewTab(

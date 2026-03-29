@@ -13,6 +13,7 @@ export interface ScreenshotMeta {
   timeframe: Timeframe;
   ema50?: number;
   ema200?: number;
+  rsi?: number;
 }
 
 // ─── Prediction Direction ───

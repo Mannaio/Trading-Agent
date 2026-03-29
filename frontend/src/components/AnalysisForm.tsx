@@ -4,6 +4,7 @@ import type { Symbol, Timeframe, TrendDirection, AnalysisRequest, Indicators, Sc
 interface ScreenshotEntry {
   dataUrl: string;
   timeframe: Timeframe;
+  rsi?: number;
 }
 
 const DEFAULT_TIMEFRAMES: Timeframe[] = ['4h', '1h', '15m'];
@@ -79,7 +80,7 @@ export function AnalysisForm({ onSubmit, isLoading }: AnalysisFormProps) {
         const data = await res.json().catch(() => ({}));
         throw new Error((data as { error?: string }).error ?? `Capture failed (${res.status})`);
       }
-      const data: { screenshots: string[] } = await res.json();
+      const data: { screenshots: string[]; rsiValues?: (number | null)[] } = await res.json();
       if (data.screenshots.length === 0) {
         throw new Error('No screenshots returned');
       }
@@ -87,6 +88,7 @@ export function AnalysisForm({ onSubmit, isLoading }: AnalysisFormProps) {
         data.screenshots.slice(0, MAX_SCREENSHOTS).map((dataUrl, index) => ({
           dataUrl,
           timeframe: DEFAULT_TIMEFRAMES[index] ?? '15m',
+          rsi: data.rsiValues?.[index] ?? undefined,
         })),
       );
     } catch (err) {
@@ -129,6 +131,7 @@ export function AnalysisForm({ onSubmit, isLoading }: AnalysisFormProps) {
     const screenshotsMeta: ScreenshotMeta[] = entries.map((e) => ({
       dataUrl: e.dataUrl,
       timeframe: e.timeframe,
+      ...(e.rsi != null && { rsi: e.rsi }),
     }));
 
     onSubmit({
