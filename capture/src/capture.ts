@@ -8,7 +8,11 @@ export interface CaptureOptions {
 export interface CaptureResult {
   screenshots: string[]; // base64 data URLs, ordered [4H, 1H, 15m]
   timeframes: string[]; // ["4h", "1h", "15m"]
-  rsiValues: (number | null)[]; // RSI values per timeframe, extracted from DOM
+  rsiValues: (number | null)[]; // RSI values per timeframe, extracted from DOM (for logging)
+  /** Cropped screenshot of the RSI legend row — same frame as the main screenshot */
+  rsiCrops: (string | null)[]; // base64 data URLs
+  /** Cropped screenshot of the full DRO Alert pane — used by the model to read pivot direction */
+  droCrops: (string | null)[]; // base64 data URLs
   symbol: string; // the symbol that was captured
 }
 
@@ -49,27 +53,46 @@ export async function captureCharts(options: CaptureOptions = {}): Promise<Captu
     const screenshots: string[] = [];
     const rsiValues: (number | null)[] = [];
 
+    // Read the RSI before the first timeframe switch so we have an "old" reference to detect change
+    let previousRsi = (await extractRsiValue(tvPage)).value;
+
+    const rsiCrops: (string | null)[] = [];
+    const droCrops: (string | null)[] = [];
+
     for (const tf of TIMEFRAMES) {
       console.log(`[Capture] Switching to timeframe: ${tf.label}`);
       await switchTimeframe(tvPage, tf.selector, tf.label);
-      
+
       console.log(`[Capture] Waiting for chart to fully render...`);
       await waitForChartToLoad(tvPage);
+
+      // Wait until the RSI value actually changes from the previous timeframe's value.
+      const { value: rsi, rawText: rsiRawText } = await waitForRsiChange(tvPage, previousRsi);
+      console.log(`[Capture] RSI raw text for ${tf.label}: "${rsiRawText ?? 'no match'}"`);
+      console.log(`[Capture] RSI for ${tf.label}: ${rsi ?? 'not found'}`);
+      rsiValues.push(rsi);
+      previousRsi = rsi;
+
+      // Crop RSI legend row and DRO pane from the same rendered frame as the main screenshot
+      const rsiCrop = await captureRsiLegend(tvPage);
+      console.log(`[Capture] RSI legend crop for ${tf.label}: ${rsiCrop ? 'captured' : 'not found'}`);
+      rsiCrops.push(rsiCrop);
+
+      const droCrop = await captureDroPane(tvPage);
+      console.log(`[Capture] DRO pane crop for ${tf.label}: ${droCrop ? 'captured' : 'not found'}`);
+      droCrops.push(droCrop);
 
       console.log(`[Capture] Taking snapshot for ${tf.label}...`);
       const base64 = await takeNativeSnapshot(tvPage);
       screenshots.push(base64);
-
-      // Extract RSI immediately after screenshot so the value matches what's in the image
-      const rsi = await extractRsiValue(tvPage);
-      console.log(`[Capture] RSI for ${tf.label}: ${rsi ?? 'not found'}`);
-      rsiValues.push(rsi);
     }
 
     return {
       screenshots,
       timeframes: TIMEFRAMES.map((tf) => tf.label),
       rsiValues,
+      rsiCrops,
+      droCrops,
       symbol: capturedSymbol,
     };
   } finally {
@@ -186,33 +209,122 @@ async function takeNativeSnapshot(page: Page): Promise<string> {
   return `data:image/png;base64,${buffer.toString('base64')}`;
 }
 
-async function extractRsiValue(page: Page): Promise<number | null> {
+/**
+ * Crop a screenshot of just the RSI legend row (the line that reads "RSI 2 close 52.96").
+ * This is taken from the exact same rendered frame as the main screenshot so it cannot
+ * disagree with what is visible in the chart.
+ */
+async function captureRsiLegend(page: Page): Promise<string | null> {
+  const handles = await page.$$('[class*="study"]');
+  for (const el of handles) {
+    const text = await el.evaluate((e: Element) => (e.textContent || '').replace(/\s+/g, ' ').trim());
+    if (!/RSI[\s\d]*close/i.test(text)) continue;
+    const box = await el.boundingBox();
+    if (!box || box.width < 20 || box.height < 4) continue;
+
+    // Add padding so the number is clearly readable
+    const padding = 6;
+    const clip = {
+      x: Math.max(0, box.x - padding),
+      y: Math.max(0, box.y - padding),
+      width: Math.min(box.width + padding * 2, 700),
+      height: box.height + padding * 2,
+    };
+    const buffer = await page.screenshot({ clip });
+    return `data:image/png;base64,${buffer.toString('base64')}`;
+  }
+  return null;
+}
+
+/**
+ * Crop a screenshot of the full DRO Alert pane (the zigzag panel).
+ * The model uses this to determine the last pivot direction:
+ * if the rightmost cycle number sits BELOW the 0 axis → last pivot was LOW, heading UP.
+ * If ABOVE the 0 axis → last pivot was HIGH, heading DOWN.
+ */
+async function captureDroPane(page: Page): Promise<string | null> {
+  const handles = await page.$$('[class*="pane"], [class*="study"]');
+  for (const el of handles) {
+    const text = await el.evaluate((e: Element) => (e.textContent || '').replace(/\s+/g, ' ').trim());
+    if (!/DRO Alert|DRO.*close/i.test(text)) continue;
+    const box = await el.boundingBox();
+    if (!box || box.width < 100 || box.height < 30) continue;
+
+    const padding = 4;
+    const clip = {
+      x: Math.max(0, box.x - padding),
+      y: Math.max(0, box.y - padding),
+      width: Math.min(box.width + padding * 2, 1920),
+      height: box.height + padding * 2,
+    };
+    const buffer = await page.screenshot({ clip });
+    return `data:image/png;base64,${buffer.toString('base64')}`;
+  }
+  return null;
+}
+
+async function extractRsiValue(page: Page): Promise<{ value: number | null; rawText: string | null }> {
   return page.evaluate(() => {
-    // TradingView renders RSI study in a separate pane with legend text like:
-    // "RSI2close70.66∅∅..." where 70.66 is the current RSI value.
-    // The study items have class containing "study" and "item".
+    const RE = /RSI[\s\d]*close\s*([\d.]+)/i;
+
+    // Primary: study legend items
     const studyItems = document.querySelectorAll('[class*="study"]');
     for (const item of studyItems) {
-      const text = item.textContent || '';
-      // Match pattern: RSI followed by params, then "close" and a decimal number
-      const match = text.match(/RSI\d*close([\d.]+)/);
+      const text = (item.textContent || '').replace(/\s+/g, ' ').trim();
+      const match = text.match(RE);
       if (match) {
         const val = parseFloat(match[1]);
-        if (!isNaN(val) && val >= 0 && val <= 100) return val;
+        if (!isNaN(val) && val >= 0 && val <= 100) {
+          // Return first 80 chars of the matched text as context
+          return { value: val, rawText: text.slice(0, 80) };
+        }
       }
     }
-    // Fallback: search all legend/values wrappers
+    // Fallback: legend / valuesWrapper elements
     const legends = document.querySelectorAll('[class*="legend"], [class*="valuesWrapper"]');
     for (const legend of legends) {
-      const text = legend.textContent || '';
-      const match = text.match(/RSI\d*close([\d.]+)/);
+      const text = (legend.textContent || '').replace(/\s+/g, ' ').trim();
+      const match = text.match(RE);
       if (match) {
         const val = parseFloat(match[1]);
-        if (!isNaN(val) && val >= 0 && val <= 100) return val;
+        if (!isNaN(val) && val >= 0 && val <= 100) {
+          return { value: val, rawText: text.slice(0, 80) };
+        }
       }
     }
-    return null;
+    return { value: null, rawText: null };
   });
+}
+
+/**
+ * Poll until the RSI legend value differs from `oldRsi` (meaning TradingView has refreshed
+ * the indicator for the new timeframe). Falls back after `timeoutMs` with whatever value
+ * is currently shown.
+ */
+async function waitForRsiChange(
+  page: Page,
+  oldRsi: number | null,
+  timeoutMs = 10_000,
+): Promise<{ value: number | null; rawText: string | null }> {
+  const interval = 400;
+  const maxAttempts = Math.ceil(timeoutMs / interval);
+
+  for (let i = 0; i < maxAttempts; i++) {
+    const result = await extractRsiValue(page);
+    const changed =
+      result.value !== null &&
+      (oldRsi === null || Math.abs(result.value - oldRsi) > 0.01);
+    if (changed) {
+      console.log(`[Capture] RSI changed from ${oldRsi ?? 'null'} → ${result.value} after ${(i + 1) * interval}ms`);
+      return result;
+    }
+    await page.waitForTimeout(interval);
+  }
+
+  // Timeout — return whatever is showing (may still be stale)
+  const fallback = await extractRsiValue(page);
+  console.log(`[Capture] RSI did not change after ${timeoutMs}ms, using current value: ${fallback.value ?? 'null'}`);
+  return fallback;
 }
 
 async function findTradingViewTab(

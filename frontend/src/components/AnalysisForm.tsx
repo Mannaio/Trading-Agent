@@ -1,10 +1,15 @@
 import { useState, useRef, useCallback } from 'react';
-import type { Symbol, Timeframe, TrendDirection, AnalysisRequest, Indicators, ScreenshotMeta } from '../types';
+import type { Symbol, Timeframe, AnalysisRequest, ScreenshotMeta } from '../types';
+
+type DroPivot = 'LOW' | 'HIGH';
 
 interface ScreenshotEntry {
   dataUrl: string;
   timeframe: Timeframe;
   rsi?: number;
+  rsiCrop?: string;
+  droCrop?: string;
+  droPivot?: DroPivot;
 }
 
 const DEFAULT_TIMEFRAMES: Timeframe[] = ['4h', '1h', '15m'];
@@ -22,13 +27,6 @@ export function AnalysisForm({ onSubmit, isLoading }: AnalysisFormProps) {
   const [symbol, setSymbol] = useState<Symbol>('ETHUSDT');
   const [entries, setEntries] = useState<ScreenshotEntry[]>([]);
   const [userReasoning, setUserReasoning] = useState('');
-  const [showIndicators, setShowIndicators] = useState(false);
-
-  // Trend direction
-  const [trend4h, setTrend4h] = useState<TrendDirection>('neutral');
-  const [trend1h, setTrend1h] = useState<TrendDirection>('neutral');
-  const [trend15m, setTrend15m] = useState<TrendDirection>('neutral');
-
   const [dragActive, setDragActive] = useState(false);
   const [capturing, setCapturing] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -80,7 +78,12 @@ export function AnalysisForm({ onSubmit, isLoading }: AnalysisFormProps) {
         const data = await res.json().catch(() => ({}));
         throw new Error((data as { error?: string }).error ?? `Capture failed (${res.status})`);
       }
-      const data: { screenshots: string[]; rsiValues?: (number | null)[] } = await res.json();
+      const data: {
+        screenshots: string[];
+        rsiValues?: (number | null)[];
+        rsiCrops?: (string | null)[];
+        droCrops?: (string | null)[];
+      } = await res.json();
       if (data.screenshots.length === 0) {
         throw new Error('No screenshots returned');
       }
@@ -89,6 +92,8 @@ export function AnalysisForm({ onSubmit, isLoading }: AnalysisFormProps) {
           dataUrl,
           timeframe: DEFAULT_TIMEFRAMES[index] ?? '15m',
           rsi: data.rsiValues?.[index] ?? undefined,
+          rsiCrop: data.rsiCrops?.[index] ?? undefined,
+          droCrop: data.droCrops?.[index] ?? undefined,
         })),
       );
     } catch (err) {
@@ -118,20 +123,15 @@ export function AnalysisForm({ onSubmit, isLoading }: AnalysisFormProps) {
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
 
-    let indicators: Indicators | undefined;
-
-    if (showIndicators) {
-      indicators = {
-        trend: { '4h': trend4h, '1h': trend1h, '15m': trend15m },
-      };
-    }
-
     const screenshots = entries.map((e) => e.dataUrl);
 
     const screenshotsMeta: ScreenshotMeta[] = entries.map((e) => ({
       dataUrl: e.dataUrl,
       timeframe: e.timeframe,
       ...(e.rsi != null && { rsi: e.rsi }),
+      ...(e.rsiCrop != null && { rsiCrop: e.rsiCrop }),
+      ...(e.droCrop != null && { droCrop: e.droCrop }),
+      ...(e.droPivot != null && { droPivot: e.droPivot }),
     }));
 
     onSubmit({
@@ -139,7 +139,6 @@ export function AnalysisForm({ onSubmit, isLoading }: AnalysisFormProps) {
       screenshots,
       screenshotsMeta,
       userReasoning: userReasoning.trim(),
-      indicators,
     });
   };
 
@@ -253,8 +252,8 @@ export function AnalysisForm({ onSubmit, isLoading }: AnalysisFormProps) {
                   </button>
                 </div>
 
-                {/* Timeframe selector */}
-                <div className="p-2.5">
+                {/* Timeframe + DRO Pivot selectors */}
+                <div className="p-2.5 space-y-2">
                   <select
                     value={entry.timeframe}
                     onChange={(e) => updateEntry(i, { timeframe: e.target.value as Timeframe })}
@@ -263,6 +262,21 @@ export function AnalysisForm({ onSubmit, isLoading }: AnalysisFormProps) {
                     {DEFAULT_TIMEFRAMES.map((tf) => (
                       <option key={tf} value={tf}>{TIMEFRAME_LABELS[tf]}</option>
                     ))}
+                  </select>
+                  <select
+                    value={entry.droPivot ?? ''}
+                    onChange={(e) => updateEntry(i, { droPivot: e.target.value === '' ? undefined : e.target.value as DroPivot })}
+                    className={`w-full px-2.5 py-1.5 bg-gray-900 border rounded-md text-sm font-medium focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                      entry.droPivot == null
+                        ? 'border-gray-600 text-gray-500'
+                        : entry.droPivot === 'LOW'
+                          ? 'border-emerald-600 text-emerald-400'
+                          : 'border-red-600 text-red-400'
+                    }`}
+                  >
+                    <option value="">DRO Pivot —</option>
+                    <option value="LOW">LOW ↑</option>
+                    <option value="HIGH">HIGH ↓</option>
                   </select>
                 </div>
               </div>
@@ -283,60 +297,6 @@ export function AnalysisForm({ onSubmit, isLoading }: AnalysisFormProps) {
           rows={4}
           className="w-full px-4 py-3 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm placeholder-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all resize-none"
         />
-      </div>
-
-      {/* Optional Indicators Toggle */}
-      <div>
-        <button
-          type="button"
-          onClick={() => setShowIndicators(!showIndicators)}
-          className="flex items-center gap-2 text-sm text-gray-400 hover:text-gray-300 transition-colors"
-        >
-          <svg
-            className={`w-4 h-4 transition-transform ${showIndicators ? 'rotate-90' : ''}`}
-            fill="none"
-            viewBox="0 0 24 24"
-            stroke="currentColor"
-          >
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-          </svg>
-          Add indicator values (optional)
-        </button>
-
-        {showIndicators && (
-          <div className="mt-3 bg-gray-800/50 rounded-lg p-4 border border-gray-700 space-y-5">
-            {/* Trend Direction */}
-            <div>
-              <h4 className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-2">
-                Trend Direction
-              </h4>
-              <p className="text-[11px] text-gray-500 mb-2">
-                Your assessment from the chart (EMA, market structure, price action — whatever you use)
-              </p>
-              <div className="grid grid-cols-3 gap-3">
-                {([
-                  { label: '4H', value: trend4h, setter: setTrend4h },
-                  { label: '1H', value: trend1h, setter: setTrend1h },
-                  { label: '15m', value: trend15m, setter: setTrend15m },
-                ] as const).map(({ label, value, setter }) => (
-                  <div key={label}>
-                    <label className="block text-xs text-gray-400 mb-1">Trend {label}</label>
-                    <select
-                      value={value}
-                      onChange={(e) => setter(e.target.value as TrendDirection)}
-                      className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-md text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent"
-                    >
-                      <option value="bullish">Bullish</option>
-                      <option value="neutral">Neutral</option>
-                      <option value="bearish">Bearish</option>
-                    </select>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-          </div>
-        )}
       </div>
 
       {/* Submit */}

@@ -42,6 +42,7 @@ export class AnalysisAgent {
     const userContent: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [];
 
     // Screenshots (vision) — label each with the user-selected timeframe
+    // Each chart is followed immediately by its RSI legend crop (when available)
     const meta = req.screenshotsMeta;
     for (let i = 0; i < req.screenshots.length; i++) {
       const m = meta?.[i];
@@ -55,6 +56,30 @@ export class AnalysisAgent {
         type: 'image_url',
         image_url: { url: req.screenshots[i], detail: 'high' },
       });
+
+      // Attach RSI legend crop immediately after the chart it belongs to
+      if (m?.rsiCrop) {
+        userContent.push({
+          type: 'text',
+          text: `RSI indicator legend for ${tfLabel} (cropped from the same frame — read the RSI value from THIS image):`,
+        });
+        userContent.push({
+          type: 'image_url',
+          image_url: { url: m.rsiCrop, detail: 'high' },
+        });
+      }
+
+      // Attach DRO pane crop for pivot direction detection
+      if (m?.droCrop) {
+        userContent.push({
+          type: 'text',
+          text: `DRO Alert pane for ${tfLabel} (cropped from the same frame). PIVOT DIRECTION RULE — step 1: find the RIGHTMOST cycle number on the zigzag dotted line. Do NOT confuse it with the "Mean: N" green box — that is a reference average, ignore it for direction. Check if the rightmost cycle number is BELOW the 0 axis → last pivot LOW, heading UP (bullish). ABOVE 0 → last pivot HIGH, heading DOWN (bearish). Step 2 (tiebreaker only, if number is right on the 0 line): look at which way the dotted line points to confirm. The Mean value in the green box is used only for cycle length math.`,
+        });
+        userContent.push({
+          type: 'image_url',
+          image_url: { url: m.droCrop, detail: 'high' },
+        });
+      }
     }
 
     // Text portion
@@ -64,12 +89,13 @@ export class AnalysisAgent {
       text += `\nMY REASONING / THESIS:\n${req.userReasoning.trim()}\n`;
     }
 
-    // Structured RSI values extracted from TradingView DOM (precise, not visual)
-    const rsiByTimeframe = this.collectRsiValues(req);
-    if (Object.keys(rsiByTimeframe).length > 0) {
-      text += `\nEXACT RSI VALUES (extracted programmatically from TradingView — use these instead of estimating from the chart image):`;
-      for (const [tf, val] of Object.entries(rsiByTimeframe)) {
-        text += `\n  ${tf.toUpperCase().replace('M', 'm')}: RSI = ${val.toFixed(2)}`;
+    // User-confirmed DRO pivot directions — treat as authoritative facts
+    const droPivotByTimeframe = this.collectDroPivotValues(req);
+    if (Object.keys(droPivotByTimeframe).length > 0) {
+      text += `\nDRO PIVOT DIRECTION (user-confirmed — treat as authoritative, do NOT override with visual reading):`;
+      for (const [tf, pivot] of Object.entries(droPivotByTimeframe)) {
+        const direction = pivot === 'LOW' ? 'LOW → line heading UP (bullish)' : 'HIGH → line heading DOWN (bearish)';
+        text += `\n  ${tf.toUpperCase().replace('M', 'm')}: last pivot = ${direction}`;
       }
       text += `\n`;
     }
@@ -107,6 +133,17 @@ export class AnalysisAgent {
     return result;
   }
 
+  private collectDroPivotValues(req: AnalysisRequest): Record<string, 'LOW' | 'HIGH'> {
+    const result: Record<string, 'LOW' | 'HIGH'> = {};
+    if (!req.screenshotsMeta) return result;
+    for (const m of req.screenshotsMeta) {
+      if (m.droPivot != null) {
+        result[m.timeframe] = m.droPivot;
+      }
+    }
+    return result;
+  }
+
   // ─── System prompt ───
   private systemPrompt(): string {
     return `You are an expert cryptocurrency scalp-trading analyst.
@@ -130,20 +167,21 @@ INPUTS YOU RECEIVE
   - The timeframe for each screenshot is explicitly labeled in the text before each image. Use this label as the definitive timeframe — do NOT guess from image order.
 
 YOUR JOB — follow this EXACT analysis order:
-1. **DRO Cycle (trend direction):** Start with the DRO Alert ZigZag. Follow these sub-steps CAREFULLY:
-   a) **Identify the LAST completed pivot.** The ZigZag alternates HIGH→LOW→HIGH→LOW. Trace the line from left to right and find the LAST turning point — is it a HIGH (line turned downward) or a LOW (line turned upward)?
-   b) **Determine current direction.** If the last pivot was a HIGH → ZigZag is heading DOWN. If the last pivot was a LOW → ZigZag is heading UP. This sets your PRIMARY directional bias.
-   c) **Read the "Mean" label** (right side of the DRO panel). This is the average half-cycle length in bars — ALWAYS use this as your reference cycle length.
-   d) **Count bars since last pivot.** This is how many bars have passed from the last turning point to the current bar. CRITICAL: Do NOT confuse this with the numbers printed between past pivots — those are distances of COMPLETED past half-cycles and are NOT the current bar count. The current bar count is the distance from the rightmost pivot to the right edge of the chart.
-   e) **Calculate cycle progress:** bars-since-last-pivot / Mean × 100%. Example: if last pivot was a LOW 35 bars ago and Mean is 68, you are 51% through the upward half-cycle.
-   f) If DRO Alert is not visible, determine the trend from whatever trend/cycle indicator IS visible, or from price structure.
+1. **DRO Cycle (trend direction):** FIRST CHECK — if the input contains a "DRO PIVOT DIRECTION (user-confirmed)" block for this timeframe, that value is AUTHORITATIVE. Use it directly as the last pivot type and direction. Do NOT override it with visual reading or any other method. When a "DRO Alert pane" crop is provided (and no user-confirmed value), use it. Otherwise use the DRO pane visible in the main chart screenshot. In both cases apply the same three-step process:
+   a) **PIVOT DIRECTION RULE — primary method:** Find the RIGHTMOST cycle number on the zigzag dotted line (e.g. "40", "59"). IMPORTANT: do NOT confuse this number with the "Mean: N" green label — the Mean label is a reference average and must be ignored for this step. Check where the rightmost cycle number sits relative to the horizontal 0 axis: if the number is BELOW 0 → last pivot was LOW, line heading UP (bullish). If ABOVE 0 → last pivot was HIGH, line heading DOWN (bearish).
+   b) **Visual direction — last resort only:** If and only if the rightmost number sits so close to the 0 line that you genuinely cannot tell whether it is above or below, then look at which way the dotted line is currently pointing (upward or downward from that number) as a tiebreaker to confirm your reading from step (a).
+   c) **Determine current direction** from steps (a)/(b). This sets your PRIMARY directional bias.
+   d) **Read the "Mean" label** from the green box on the right of the DRO pane. This is the average half-cycle length in bars — use it only for cycle math, not for pivot direction.
+   e) **Count bars since last pivot.** The current bar count is the distance from the rightmost pivot turning point to the right edge of the chart. Do NOT use the numbers printed between past pivots — those are completed cycle lengths.
+   f) **Calculate cycle progress:** bars-since-last-pivot / Mean × 100%.
+   g) If DRO Alert is not visible at all, determine trend from whatever indicator IS visible.
 2. **EMA Structure (trend state & exhaustion):** You MUST analyze ALL provided timeframes (4H, 1H, 15m) — do NOT skip any. For EACH timeframe, read the EMA 50 (fast) and EMA 200 (slow) NUMERICAL VALUES from that chart's header. The header line typically reads like "RSI2 (2, 200, 50, EMA, ...) 0.02981 0.03000" — the first value is EMA 200 and the second is EMA 50. You MUST read these exact numbers, not estimate visually:
    a) **Crossover state:** Is EMA 50 above EMA 200 (bullish / golden cross) or below (bearish / death cross)? This sets the macro structural bias.
    b) **Distance between EMAs (gap %):** Compute: |EMA50 - EMA200| / min(EMA50, EMA200) × 100. Classify strictly by these thresholds — TIGHT: below 1% (e.g. 0.64% = tight — recently crossed, early trend). MODERATE: 1% to 3% (e.g. 1.16% = moderate — established trend). WIDE: above 3% (e.g. 3.10% = wide — strongly trending, potentially overextended). CRITICAL: Do NOT confuse "price distance from EMAs" with "gap between the two EMAs" — they are completely different measurements.
    c) **Price position relative to EMAs:** Above both, between them, or below both.
    d) **Interpret:** Wide EMA gap + price far from both EMAs = overextended, higher reversal probability. Tight EMA gap or recent cross = early trend, continuation likely. Price between the two EMAs = indecision or trend change. EMA 50 curving toward EMA 200 = trend weakening even if spread is still wide.
    e) If EMAs are not visible, skip this step.
-3. **RSI Validation:** If EXACT RSI VALUES are provided in the user message, use those numbers directly — they are extracted programmatically from TradingView and are precise. Do NOT try to read RSI from the chart image when exact values are provided. If no exact values are provided, read the RSI value visually from each timeframe. Does RSI confirm or challenge the DRO trend? Look for overbought/oversold levels and divergences with price. If RSI is not visible, use whatever momentum indicator IS visible to validate the trend.
+3. **RSI Validation:** For each timeframe, a dedicated "RSI indicator legend" crop image is provided right after the chart screenshot — it shows the legend row exactly as displayed in TradingView (e.g. "RSI 2 close 52.96"). READ THE RSI VALUE FROM THAT CROP IMAGE. Do NOT estimate RSI from the full chart screenshot (the legend text is too small to read reliably at that scale). The crop is from the same rendered frame so it is always accurate. Does RSI confirm or challenge the DRO trend? Look for overbought/oversold levels and divergences with price. If no crop is provided, read from the chart directly.
 4. **DRO Momentum (timing):** Read the DRO Oscillator value. Is it above/below zero? Crossing? Diverging from price? This tells you if momentum supports the cycle direction or is weakening. If the DRO Oscillator is not visible, use whatever oscillator IS visible for timing.
 5. **Combine:** Only after completing steps 1→2→3→4, synthesize into a directional prediction with probability. Pay special attention to EMA + DRO agreement: if EMA shows exhaustion (wide spread, price far from EMAs) AND DRO cycle is nearing a pivot → strong reversal signal, increase confidence. If EMA shows early trend (tight spread, recent cross) AND DRO is mid-cycle → continuation likely. If EMA and DRO disagree, note the conflict and reduce confidence.
 6. **User thesis:** Consider the user's reasoning — agree or disagree honestly.
@@ -154,8 +192,8 @@ IMPORTANT: If the screenshots show DIFFERENT indicators than DRO/RSI/EMA (e.g. M
 
 ANALYSIS FIELD REQUIREMENTS — each key in "analysis" (4h, 1h, 15m) MUST have these sub-fields:
 • **"ema"**: Read EMA 50 and EMA 200 NUMERICAL VALUES from that chart's header. State: (1) EMA 50 value, (2) EMA 200 value, (3) computed gap % = |EMA50−EMA200|/min × 100, classified strictly as: tight (<1%), moderate (1-3%), wide (>3%). Example: 0.64% = tight, 1.16% = moderate, 3.10% = wide. (4) crossover state — bullish or bearish, (5) price position — above both, between, or below both, (6) assessment. If EMAs not visible, say "EMAs not visible."
-• **"rsi"**: Read the RSI value from that chart. State the value, whether overbought (>70) / oversold (<30) / neutral, and any divergence with price. If RSI not visible, use whatever momentum indicator is shown.
-• **"dro"**: State: (1) last pivot type — HIGH or LOW, (2) direction heading (opposite of pivot), (3) Mean half-cycle length, (4) bars since last pivot (from rightmost pivot to current bar — NOT numbers between past pivots), (5) cycle progress = bars-since-pivot / Mean as %. If DRO not visible, describe trend from available indicators.
+• **"rsi"**: Read the RSI value from the "RSI indicator legend" crop image provided for this timeframe. The number shown there (e.g. "52.96") is the authoritative RSI — use it exactly. State the value, whether overbought (>70) / oversold (<30) / neutral, and any divergence with price. If no crop is provided, read from the chart directly.
+• **"dro"**: State: (1) last pivot type — if user-confirmed pivot is provided in "DRO PIVOT DIRECTION" block, use that value directly; otherwise apply the PIVOT DIRECTION RULE: rightmost cycle number BELOW 0 = LOW pivot, ABOVE 0 = HIGH pivot (do NOT use the Mean label for this — it is a separate reference value), (2) direction heading, (3) Mean from the green label, (4) bars since last pivot (rightmost turning point to right edge — NOT numbers between past pivots), (5) cycle progress = bars-since-pivot / Mean as %. Visual line direction is a last resort tiebreaker only, not the primary method.
 
 CONCLUSION FIELD — your "conclusion" MUST:
 • Explain HOW indicators across all timeframes work together — connect them into a narrative, don't just list them.

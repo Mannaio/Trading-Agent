@@ -91,6 +91,24 @@ export function validateRequest(body: unknown): AnalysisRequest {
         }
         meta.rsi = m.rsi;
       }
+      if (m.rsiCrop !== undefined && m.rsiCrop !== null) {
+        if (typeof m.rsiCrop !== 'string' || !m.rsiCrop.startsWith('data:image/')) {
+          throw new ValidationError(`screenshotsMeta[${i}].rsiCrop must be a base64 image data URL`);
+        }
+        meta.rsiCrop = m.rsiCrop;
+      }
+      if (m.droCrop !== undefined && m.droCrop !== null) {
+        if (typeof m.droCrop !== 'string' || !m.droCrop.startsWith('data:image/')) {
+          throw new ValidationError(`screenshotsMeta[${i}].droCrop must be a base64 image data URL`);
+        }
+        meta.droCrop = m.droCrop;
+      }
+      if (m.droPivot !== undefined && m.droPivot !== null) {
+        if (m.droPivot !== 'LOW' && m.droPivot !== 'HIGH') {
+          throw new ValidationError(`screenshotsMeta[${i}].droPivot must be "LOW" or "HIGH"`);
+        }
+        meta.droPivot = m.droPivot;
+      }
       return meta;
     });
   }

@@ -14,6 +14,12 @@ export interface ScreenshotMeta {
   ema50?: number;
   ema200?: number;
   rsi?: number;
+  /** Cropped screenshot of the RSI legend row — same frame as dataUrl, guaranteed to match */
+  rsiCrop?: string;
+  /** Cropped screenshot of the full DRO Alert pane — for pivot direction detection */
+  droCrop?: string;
+  /** User-confirmed DRO last pivot type — authoritative when provided */
+  droPivot?: 'LOW' | 'HIGH';
 }
 
 // ─── Prediction Direction ───
