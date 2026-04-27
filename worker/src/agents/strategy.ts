@@ -102,7 +102,7 @@ ETHBTC PRECISION
 
 TRADE RECOMMENDATION
 - "TAKE": probability ≥ 65% AND R:R ≥ 1.0 AND (no portfolio context provided OR historical band win rate ≥ 50% OR overall win rate ≥ 50%).
-- "SKIP": probability < 60% OR direction is UNCLEAR OR historical band win rate < 40%.
+- "SKIP": probability < 60% OR direction is UNCLEAR OR (portfolio context is provided AND historical band win rate for this probability band < 40%).
 - "WAIT": everything else — marginal setup (probability 60–65%, R:R slightly below 1.0, or a losing streak).
 
 POSITION SIZING (only when portfolio size is provided)
@@ -163,7 +163,12 @@ RESPONSE FORMAT — respond ONLY with valid JSON:
       takeProfit = this.roundPrice(tpFallback, tpFallback);
     }
 
-    const riskReward = this.safeNumber(json.riskReward, 1.0, 2);
+    const slDist = Math.abs(stopLoss - entry);
+    const tpDist = Math.abs(takeProfit - entry);
+    const riskReward =
+      slDist > 0
+        ? parseFloat((tpDist / slDist).toFixed(2))
+        : this.safeNumber(json.riskReward, 1.0, 2);
 
     const suggestedPositionSizeUsd =
       typeof json.suggestedPositionSizeUsd === 'number' &&
