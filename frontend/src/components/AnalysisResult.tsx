@@ -251,6 +251,46 @@ export function AnalysisResult({ analysis, livePrice, onSaveFeedback, onConfirmT
         </div>
       )}
 
+      {/* Trade Recommendation */}
+      {analysis.tradeRecommendation && (
+        <div className={`rounded-lg p-4 border ${
+          analysis.tradeRecommendation === 'TAKE'
+            ? 'bg-emerald-900/40 border-emerald-700'
+            : analysis.tradeRecommendation === 'SKIP'
+            ? 'bg-red-900/40 border-red-700'
+            : 'bg-yellow-900/40 border-yellow-700'
+        }`}>
+          <div className="flex items-center gap-2 mb-1">
+            <span className={`text-lg font-bold ${
+              analysis.tradeRecommendation === 'TAKE' ? 'text-emerald-400'
+              : analysis.tradeRecommendation === 'SKIP' ? 'text-red-400'
+              : 'text-yellow-400'
+            }`}>
+              {analysis.tradeRecommendation === 'TAKE' ? '✅ TAKE TRADE'
+                : analysis.tradeRecommendation === 'SKIP' ? '🚫 SKIP'
+                : '⏳ WAIT'}
+            </span>
+            {analysis.riskReward != null && (
+              <span className="text-xs text-gray-400">R:R {analysis.riskReward.toFixed(2)}</span>
+            )}
+          </div>
+          {analysis.recommendationReasoning && (
+            <p className="text-sm text-gray-300">{analysis.recommendationReasoning}</p>
+          )}
+          {analysis.suggestedPositionSizeUsd != null && (
+            <p className="text-xs text-gray-400 mt-1">
+              Suggested size:{' '}
+              <span className="text-white font-medium">
+                ${analysis.suggestedPositionSizeUsd.toLocaleString()}
+              </span>
+              {analysis.suggestedPositionSizePercent != null && (
+                <span> ({analysis.suggestedPositionSizePercent.toFixed(1)}% of portfolio)</span>
+              )}
+            </p>
+          )}
+        </div>
+      )}
+
       {/* Trade Levels */}
       {analysis.direction !== 'UNCLEAR' && (
         <div className="space-y-3">
