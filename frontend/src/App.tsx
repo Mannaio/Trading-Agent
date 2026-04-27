@@ -4,7 +4,7 @@ import { AnalysisResult } from './components/AnalysisResult';
 import { HistoryList } from './components/HistoryList';
 import { StatsPanel } from './components/StatsPanel';
 import { usePriceTracker } from './hooks/usePriceTracker';
-import type { AnalysisRequest, AnalysisResponse, StoredAnalysis, Direction } from './types';
+import type { AnalysisRequest, AnalysisResponse, StoredAnalysis, Direction, PortfolioContext } from './types';
 
 const STORAGE_KEY = 'trading-agent-history';
 const MAX_HISTORY = 50;
@@ -37,12 +37,28 @@ export default function App() {
   const [selected, setSelected] = useState<StoredAnalysis | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [portfolioSizeUsd, setPortfolioSizeUsd] = useState<number>(() => {
+    const saved = localStorage.getItem('portfolio-size');
+    return saved ? Number(saved) : 0;
+  });
+  const [maxRiskPercent, setMaxRiskPercent] = useState<number>(() => {
+    const saved = localStorage.getItem('portfolio-risk');
+    return saved ? Number(saved) : 2;
+  });
 
   useEffect(() => {
     const h = loadHistory();
     setHistory(h);
     if (h.length > 0) setSelected(h[0]);
   }, []);
+
+  useEffect(() => {
+    if (portfolioSizeUsd > 0) localStorage.setItem('portfolio-size', String(portfolioSizeUsd));
+  }, [portfolioSizeUsd]);
+
+  useEffect(() => {
+    localStorage.setItem('portfolio-risk', String(maxRiskPercent));
+  }, [maxRiskPercent]);
 
   // Price tracker — auto-resolves pending predictions
   const handleTrackerUpdate = useCallback((updated: StoredAnalysis[]) => {
@@ -138,6 +154,44 @@ export default function App() {
     [history],
   );
 
+  function computePortfolioContext(): PortfolioContext | undefined {
+    if (!portfolioSizeUsd || portfolioSizeUsd <= 0) return undefined;
+
+    const completed = history.filter((h) => h.outcome === 'won' || h.outcome === 'lost');
+    const won = completed.filter((h) => h.outcome === 'won').length;
+    const winRate = completed.length > 0 ? won / completed.length : 0;
+
+    const bandWinRate = (low: number, high: number): number | null => {
+      const inBand = completed.filter((h) => h.probability >= low && h.probability < high);
+      if (inBand.length < 3) return null;
+      return inBand.filter((h) => h.outcome === 'won').length / inBand.length;
+    };
+
+    const recent = history
+      .filter((h) => h.outcome === 'won' || h.outcome === 'lost')
+      .slice(0, 5);
+    const recentWins = recent.filter((h) => h.outcome === 'won').length;
+    const recentLosses = recent.filter((h) => h.outcome === 'lost').length;
+    let recentStreak = 'mixed';
+    if (recent.length >= 2) {
+      if (recentLosses >= 3) recentStreak = `${recentLosses} losses`;
+      else if (recentWins >= 3) recentStreak = `${recentWins} wins`;
+    }
+
+    return {
+      portfolioSizeUsd,
+      maxRiskPerTradePercent: maxRiskPercent,
+      totalTrades: completed.length,
+      winRate,
+      winRateByProbabilityBand: {
+        '55-65': bandWinRate(55, 65),
+        '65-75': bandWinRate(65, 75),
+        '75+': bandWinRate(75, 101),
+      },
+      recentStreak,
+    };
+  }
+
   // Collect recent lessons from lost trades (last 10 with feedback)
   function collectLessons(): string[] {
     return history
@@ -160,11 +214,14 @@ export default function App() {
       const lessons = collectLessons();
       const enrichedReq = lessons.length > 0 ? { ...req, pastLessons: lessons } : req;
 
+      const portfolioContext = computePortfolioContext();
+      const finalReq = portfolioContext ? { ...enrichedReq, portfolioContext } : enrichedReq;
+
       try {
         const res = await fetch('/api/analyze', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(enrichedReq),
+          body: JSON.stringify(finalReq),
         });
 
         if (!res.ok) {
@@ -230,7 +287,14 @@ export default function App() {
           {/* Left — Form */}
           <div className="lg:col-span-5">
             <div className="bg-gray-800/50 rounded-lg p-6 border border-gray-700 lg:sticky lg:top-24">
-              <AnalysisForm onSubmit={handleAnalyze} isLoading={loading} />
+              <AnalysisForm
+                onSubmit={handleAnalyze}
+                isLoading={loading}
+                portfolioSizeUsd={portfolioSizeUsd}
+                maxRiskPercent={maxRiskPercent}
+                onPortfolioSizeChange={setPortfolioSizeUsd}
+                onMaxRiskPercentChange={setMaxRiskPercent}
+              />
             </div>
           </div>
 
