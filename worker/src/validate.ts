@@ -1,4 +1,4 @@
-import type { AnalysisRequest, Symbol, TrendDirection, Timeframe, ScreenshotMeta } from './types';
+import type { AnalysisRequest, Symbol, TrendDirection, Timeframe, ScreenshotMeta, PortfolioContext } from './types';
 
 const VALID_SYMBOLS: Symbol[] = ['ETHUSDT', 'BTCUSDT', 'ETHBTC'];
 const VALID_TRENDS: TrendDirection[] = ['bullish', 'bearish', 'neutral'];
@@ -130,7 +130,28 @@ export function validateRequest(body: unknown): AnalysisRequest {
       .slice(0, 10); // cap at 10 lessons
   }
 
-  return { symbol, screenshots, screenshotsMeta, userReasoning, indicators, pastLessons };
+  // ── portfolioContext (optional) ──
+  let portfolioContext: PortfolioContext | undefined;
+  if ('portfolioContext' in b && b.portfolioContext != null) {
+    const p = b.portfolioContext as Record<string, unknown>;
+    if (typeof p.portfolioSizeUsd !== 'number' || p.portfolioSizeUsd <= 0) {
+      throw new ValidationError('portfolioContext.portfolioSizeUsd must be a positive number');
+    }
+    if (
+      typeof p.maxRiskPerTradePercent !== 'number' ||
+      p.maxRiskPerTradePercent <= 0 ||
+      p.maxRiskPerTradePercent > 100
+    ) {
+      throw new ValidationError(
+        'portfolioContext.maxRiskPerTradePercent must be a number between 0 and 100',
+      );
+    }
+    // Other fields (totalTrades, winRate, band rates, recentStreak) are
+    // computed on the frontend and accepted as-is.
+    portfolioContext = b.portfolioContext as PortfolioContext;
+  }
+
+  return { symbol, screenshots, screenshotsMeta, userReasoning, indicators, pastLessons, portfolioContext };
 }
 
 function validateIndicators(val: unknown): NonNullable<AnalysisRequest['indicators']> {
