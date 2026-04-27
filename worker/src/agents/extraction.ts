@@ -101,8 +101,8 @@ If no crop is provided, attempt to read from the chart directly.
 Return null if not readable.
 
 DRO PIVOT (rightmostCycleNumberBelowZero)
-If the input for this chart contains "User-confirmed DRO pivot: LOW" → true (LOW = below zero = bullish).
-If "User-confirmed DRO pivot: HIGH" → false.
+If the input for this chart contains "User-confirmed DRO pivot for ... : LOW" → true (LOW = below zero = bullish).
+If "User-confirmed DRO pivot for ... : HIGH" → false.
 Otherwise, look at the DRO Alert pane crop (if provided):
   - Find the RIGHTMOST cycle number on the zigzag dotted line (NOT the "Mean: N" green box — ignore the Mean for direction).
   - If that number is BELOW the 0 axis → true. If ABOVE → false. If genuinely unclear → null.
@@ -162,7 +162,7 @@ Return one object per chart in the order they were provided. If the entire DRO b
     }
 
     const modelCharts = Array.isArray(json.charts) ? json.charts : [];
-    const count = Math.max(modelCharts.length, req.screenshots.length);
+    const count = req.screenshots.length;
     const results: ChartExtraction[] = [];
 
     for (let i = 0; i < count; i++) {
