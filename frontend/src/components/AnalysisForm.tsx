@@ -18,12 +18,23 @@ const TIMEFRAME_LABELS: Record<Timeframe, string> = { '4h': '4H', '1h': '1H', '1
 interface AnalysisFormProps {
   onSubmit: (request: AnalysisRequest) => void;
   isLoading: boolean;
+  portfolioSizeUsd: number;
+  maxRiskPercent: number;
+  onPortfolioSizeChange: (v: number) => void;
+  onMaxRiskPercentChange: (v: number) => void;
 }
 
 const MAX_SCREENSHOTS = 3;
 const MAX_FILE_SIZE = 4 * 1024 * 1024; // 4 MB
 
-export function AnalysisForm({ onSubmit, isLoading }: AnalysisFormProps) {
+export function AnalysisForm({
+  onSubmit,
+  isLoading,
+  portfolioSizeUsd,
+  maxRiskPercent,
+  onPortfolioSizeChange,
+  onMaxRiskPercentChange,
+}: AnalysisFormProps) {
   const [symbol, setSymbol] = useState<Symbol>('ETHUSDT');
   const [entries, setEntries] = useState<ScreenshotEntry[]>([]);
   const [userReasoning, setUserReasoning] = useState('');
@@ -297,6 +308,40 @@ export function AnalysisForm({ onSubmit, isLoading }: AnalysisFormProps) {
           rows={4}
           className="w-full px-4 py-3 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm placeholder-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all resize-none"
         />
+      </div>
+
+      {/* Portfolio Settings */}
+      <div>
+        <label className="block text-sm font-medium text-gray-300 mb-1.5">
+          Portfolio Settings
+          <span className="ml-1 text-gray-500 font-normal">(optional — enables position sizing)</span>
+        </label>
+        <div className="flex gap-2">
+          <div className="flex-1">
+            <label className="block text-xs text-gray-500 mb-1">Portfolio size ($)</label>
+            <input
+              type="number"
+              min="0"
+              step="100"
+              value={portfolioSizeUsd || ''}
+              onChange={(e) => onPortfolioSizeChange(Number(e.target.value))}
+              placeholder="e.g. 10000"
+              className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm placeholder-gray-500 focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+            />
+          </div>
+          <div className="w-28">
+            <label className="block text-xs text-gray-500 mb-1">Max risk %</label>
+            <input
+              type="number"
+              min="0.1"
+              max="10"
+              step="0.1"
+              value={maxRiskPercent}
+              onChange={(e) => onMaxRiskPercentChange(Number(e.target.value))}
+              className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+            />
+          </div>
+        </div>
       </div>
 
       {/* Submit */}
