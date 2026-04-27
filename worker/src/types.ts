@@ -31,6 +31,7 @@ export interface Indicators {
 }
 
 // ─── Agent 1 output: raw extracted data per chart ───
+// SYNC: mirrored in frontend/src/types.ts
 export interface ChartExtraction {
   timeframe: Timeframe;
   ema50: number | null;
@@ -51,7 +52,7 @@ export interface TimeframeAnalysisResult {
   timeframe: Timeframe;
   emaBias: 'bullish' | 'bearish' | 'neutral';
   emaGapClassification: 'tight' | 'moderate' | 'wide';
-  emaGapPercent: number;
+  emaGapPercent: number | null;
   rsiSignal: 'overbought' | 'oversold' | 'neutral';
   rsiValue: number | null;
   droBias: 'bullish' | 'bearish' | 'unclear';
@@ -59,7 +60,8 @@ export interface TimeframeAnalysisResult {
   overallBias: 'bullish' | 'bearish' | 'unclear';
   confidence: number; // 0-100
   summary: string;
-  // Backward-compat flat fields (used by orchestrator to fill AnalysisResponse.analysis)
+  // TODO: remove when AnalysisResponse.analysis (Record<Timeframe, TimeframeAnalysis>) is retired
+  // These are formatting shims for the legacy response shape — not Agent 2 analysis output
   ema: string;
   rsi: string;
   dro: string;
@@ -68,7 +70,7 @@ export interface TimeframeAnalysisResult {
 // ─── Agent 3 output: synthesis across all timeframes ───
 export interface SynthesisResult {
   direction: Direction;
-  probability: number;
+  probability: number; // 0-100
   timeframeEstimate: string;
   conclusion: string;
   thesisFeedback: string;
@@ -76,6 +78,7 @@ export interface SynthesisResult {
 }
 
 // ─── Portfolio context sent by frontend ───
+// SYNC: mirrored in frontend/src/types.ts
 export interface PortfolioContext {
   portfolioSizeUsd: number;
   maxRiskPerTradePercent: number;

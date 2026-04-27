@@ -34,6 +34,7 @@ export interface Indicators {
 }
 
 // ─── Agent 1 output: raw extracted data per chart ───
+// SYNC: keep in sync with worker/src/types.ts
 export interface ChartExtraction {
   timeframe: Timeframe;
   ema50: number | null;
@@ -50,6 +51,7 @@ export interface ChartExtraction {
 }
 
 // ─── Portfolio context sent by frontend ───
+// SYNC: keep in sync with worker/src/types.ts
 export interface PortfolioContext {
   portfolioSizeUsd: number;
   maxRiskPerTradePercent: number;
