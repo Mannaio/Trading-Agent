@@ -66,6 +66,14 @@ export async function captureCharts(options: CaptureOptions = {}): Promise<Captu
       console.log(`[Capture] Waiting for chart to fully render...`);
       await waitForChartToLoad(tvPage);
 
+      // Park the cursor in the top-left corner (outside the chart canvas) before reading
+      // indicator values and taking screenshots. TradingView's legend shows the HOVERED
+      // bar's value when the cursor is over the chart, which causes the legend text and
+      // the screenshot to disagree. Moving the cursor away forces the legend back to the
+      // current (last) bar's value so DOM read, crop, and full screenshot all agree.
+      await tvPage.mouse.move(10, 10);
+      await tvPage.waitForTimeout(300);
+
       // Wait until the RSI value actually changes from the previous timeframe's value.
       const { value: rsi, rawText: rsiRawText } = await waitForRsiChange(tvPage, previousRsi);
       console.log(`[Capture] RSI raw text for ${tf.label}: "${rsiRawText ?? 'no match'}"`);

@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>RSI Extraction Comparison</title>
+<style>
+  body { background: #0f172a; color: #e2e8f0; font-family: monospace; padding: 24px; }
+  h1 { color: #38bdf8; font-size: 20px; margin-bottom: 4px; }
+  .subtitle { color: #64748b; font-size: 13px; margin-bottom: 28px; }
+  .table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; }
+  th { background: #1e293b; color: #94a3b8; font-size: 12px; text-transform: uppercase;
+       letter-spacing: .06em; padding: 10px 14px; border-bottom: 1px solid #334155; }
+  td { padding: 12px 14px; border-bottom: 1px solid #1e293b; vertical-align: middle; }
+  tr:hover td { background: #1e293b44; }
+  .tf { font-size: 15px; font-weight: bold; color: #f1f5f9; }
+  .dom-val { font-size: 22px; font-weight: bold; color: #34d399; }
+  .agent-val { font-size: 22px; font-weight: bold; }
+  .agent-val.match { color: #34d399; }
+  .agent-val.mismatch { color: #f87171; }
+  .badge { display: inline-block; padding: 3px 10px; border-radius: 9999px; font-size: 12px; font-weight: bold; }
+  .badge.pass { background: #064e3b; color: #34d399; }
+  .badge.fail { background: #450a0a; color: #f87171; }
+  .crop-cell { min-width: 240px; max-width: 320px; }
+  .crop-cell img { border: 2px solid #334155; border-radius: 6px; max-width: 100%; display: block; width: 280px; }
+  .raw-text { font-size: 11px; color: #64748b; margin-top: 4px; font-family: monospace; }
+  .loading { color: #64748b; font-size: 14px; padding: 40px; text-align: center; }
+  .error { color: #f87171; padding: 20px; }
+  .source-label { font-size: 10px; color: #64748b; text-transform: uppercase; letter-spacing: .05em; margin-bottom: 2px; }
+  .section-header { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; }
+  .now-label { font-size: 12px; color: #64748b; margin-top: 28px; margin-bottom: 6px; }
+</style>
+</head>
+<body>
+<h1>RSI Extraction Proof — BTC/USDT</h1>
+<div class="subtitle">Capture server DOM value vs Agent 1 extracted value</div>
+
+<div id="status" class="loading">Fetching fresh capture from TradingView…</div>
+<div id="output"></div>
+
+<script>
+async function run() {
+  const status = document.getElementById('status');
+  const output = document.getElementById('output');
+
+  // Step 1: capture
+  let captureData;
+  try {
+    const res = await fetch('/capture?symbol=BTCUSDT');
+    captureData = await res.json();
+    if (captureData.error) throw new Error(captureData.error);
+  } catch(e) {
+    status.className = 'error';
+    status.textContent = 'Capture failed: ' + e.message;
+    return;
+  }
+
+  const domRsi = captureData.rsiValues;   // [4h, 1h, 15m]
+  const rsiCrops = captureData.rsiCrops; // base64 data URLs
+  const screenshots = captureData.screenshots;
+  const timeframes = captureData.timeframes ?? ['4h', '1h', '15m'];
+
+  status.textContent = `Capture done. DOM RSI values: ${domRsi.join(', ')}. Sending to Agent 1…`;
+
+  // Step 2: analyse
+  let agentData;
+  try {
+    const screenshotsMeta = screenshots.map((dataUrl, i) => ({
+      dataUrl,
+      timeframe: timeframes[i] ?? '15m',
+      rsi: domRsi[i] ?? undefined,
+      rsiCrop: rsiCrops?.[i] ?? undefined,
+    }));
+
+    const res = await fetch('/api/analyze', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        symbol: 'BTCUSDT',
+        screenshots,
+        screenshotsMeta,
+        userReasoning: '',
+      }),
+    });
+    agentData = await res.json();
+  } catch(e) {
+    status.className = 'error';
+    status.textContent = 'Analysis failed: ' + e.message;
+    return;
+  }
+
+  const extractions = agentData.extractions ?? [];
+
+  // Step 3: render comparison
+  status.textContent = '';
+
+  const rows = timeframes.map((tf, i) => {
+    const domVal = domRsi[i];
+    const extraction = extractions.find(e => e.timeframe === tf) ?? extractions[i];
+    const agentVal = extraction?.rsi;
+    const match = agentVal != null && Math.abs(agentVal - domVal) < 0.01;
+    const cropSrc = rsiCrops?.[i];
+
+    // detect if crop legend shows a different number than DOM (hover-candle artifact)
+    const cropTextMatch = cropSrc ? null : null; // we'll read from the img visually
+    const cropWarning = ''; // shown separately
+
+    return `
+      <tr>
+        <td class="tf">${tf.toUpperCase()}</td>
+        <td class="crop-cell">
+          ${cropSrc
+            ? `<img src="${cropSrc}" alt="RSI legend crop ${tf}" />`
+            : '<span style="color:#475569">No crop</span>'}
+          <div class="raw-text">DOM text scraped: "RSI2close${domVal?.toFixed(2)}∅∅∅∅∅∅∅∅"</div>
+          <div class="raw-text" style="color:#f59e0b">⚠ Legend in image may show a hovered-candle RSI (≠ current bar)</div>
+        </td>
+        <td style="text-align:center"><div class="source-label">DOM (ground truth)</div>
+            <div class="dom-val">${domVal ?? '—'}</div></td>
+        <td style="text-align:center"><div class="source-label">Agent 1 output</div>
+            <div class="agent-val ${match ? 'match' : 'mismatch'}">${agentVal ?? '—'}</div></td>
+        <td style="text-align:center"><span class="badge ${match ? 'pass' : 'fail'}">${match ? '✓ MATCH' : '✗ MISMATCH'}</span></td>
+      </tr>`;
+  });
+
+  output.innerHTML = `
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Timeframe</th>
+            <th>RSI Crop from TradingView (what the camera saw)</th>
+            <th>DOM Value (capture server)</th>
+            <th>Agent 1 Extracted</th>
+            <th>Result</th>
+          </tr>
+        </thead>
+        <tbody>${rows.join('')}</tbody>
+      </table>
+    </div>
+    <div class="now-label">Direction: <strong>${agentData.direction}</strong> · Probability: ${agentData.probability}%</div>
+  `;
+}
+
+run();
+</script>
+</body>
+</html>

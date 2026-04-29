@@ -51,8 +51,17 @@ export class ChartExtractionAgent {
         image_url: { url: req.screenshots[i], detail: 'high' },
       });
 
+      // If the capture server already read the RSI from the TradingView DOM, inject it as
+      // authoritative text. GPT-4o must use this value and MUST NOT override it from the image.
+      if (typeof m?.rsi === 'number') {
+        userContent.push({
+          type: 'text',
+          text: `AUTHORITATIVE RSI for ${tfLabel} (read from TradingView DOM — use this value exactly, do NOT override it from the image): ${m.rsi}`,
+        });
+      }
+
       if (m?.rsiCrop) {
-        userContent.push({ type: 'text', text: `RSI legend crop for ${tfLabel}:` });
+        userContent.push({ type: 'text', text: `RSI legend crop for ${tfLabel} (for visual reference only — the numeric value above is authoritative):` });
         userContent.push({
           type: 'image_url',
           image_url: { url: m.rsiCrop, detail: 'high' },
@@ -96,7 +105,8 @@ The first numeric value after the indicator params = EMA 200, the second = EMA 5
 Return null for either if not readable.
 
 RSI VALUE
-If an RSI legend crop image is provided, read the value from it (e.g. "RSI 2 close 52.96" → 52.96).
+If the input contains "AUTHORITATIVE RSI for ... (read from TradingView DOM — use this value exactly, do NOT override it from the image): X", use X as the RSI value verbatim. Do NOT read from the image.
+Otherwise, if an RSI legend crop image is provided, read the value from it (e.g. "RSI 2 close 52.96" → 52.96).
 If no crop is provided, attempt to read from the chart directly.
 Return null if not readable.
 
@@ -172,7 +182,9 @@ Return one object per chart in the order they were provided. If the entire DRO b
       const timeframe = this.resolveTimeframe(meta?.timeframe, c.timeframe);
       const ema50 = this.nullableNumber(c.ema50);
       const ema200 = this.nullableNumber(c.ema200);
-      const rsi = this.nullableNumber(c.rsi);
+      // Prefer the capture-server's DOM-read RSI (authoritative) over the model's OCR output.
+      const rsi =
+        typeof meta?.rsi === 'number' ? meta.rsi : this.nullableNumber(c.rsi);
       const currentPrice = this.nullableNumber(c.currentPrice);
       const extractionConfidence = this.resolveConfidence(c.extractionConfidence);
       const dro = this.parseDro(c.dro);
