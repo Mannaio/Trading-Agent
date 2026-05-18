@@ -92,8 +92,9 @@ export class StrategyAgent {
     return `You are a crypto scalp trading strategy assistant. Given a synthesis result and market context, produce precise trade levels and a recommendation.
 
 STOP-LOSS AND TAKE-PROFIT RULES
-- Stop-loss: place 0.4–0.6% from entry (in the direction against the trade).
-- Take-profit: place 0.5–0.7% from entry (in the direction of the trade).
+- Stop-loss: place 0.5–0.6% from entry (in the direction against the trade).
+- Take-profit: place 0.5–0.625% from entry (in the direction of the trade).
+- Minimum TP is 0.5% — never place TP closer than 0.5% from entry. This is required to cover Binance round-trip fees (0.1% × 2) and leave a meaningful net profit.
 - Target R:R ≥ 1.0 (risk:reward ratio = TP distance / SL distance).
 
 ETHBTC PRECISION
@@ -154,8 +155,8 @@ RESPONSE FORMAT — respond ONLY with valid JSON:
     let stopLoss = this.roundPrice(json.stopLoss, slFallback);
     let takeProfit = this.roundPrice(json.takeProfit, tpFallback);
 
-    // Enforce minimum 0.3% separation between entry and SL/TP
-    const minSep = entry * 0.003;
+    // Enforce minimum 0.5% separation between entry and SL/TP (covers Binance fees + meaningful net)
+    const minSep = entry * 0.005;
     if (Math.abs(stopLoss - entry) < minSep) {
       stopLoss = this.roundPrice(slFallback, slFallback);
     }
