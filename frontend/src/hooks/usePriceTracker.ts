@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { StoredAnalysis, Outcome } from '../types';
+import type { StoredAnalysis, Outcome, CloseBy, Symbol } from '../types';
 
 const EXPIRY_MS = 24 * 60 * 60_000; // 24 hours
 const EXPIRY_CHECK_INTERVAL = 60_000; // check expiry every 60 seconds
@@ -15,7 +15,7 @@ const KLINE_INTERVAL = '5m'; // 5-minute candles for catch-up (288 per 24h, with
 function resolveOutcome(
   prediction: StoredAnalysis,
   currentPrice: number,
-): { outcome: Outcome; price: number } | null {
+): { outcome: Outcome; price: number; closedBy?: CloseBy } | null {
   if (prediction.outcome !== 'pending') return null;
   if (prediction.direction === 'UNCLEAR') {
     return { outcome: 'expired', price: currentPrice };
@@ -24,17 +24,19 @@ function resolveOutcome(
   const { stopLoss, takeProfit } = prediction.levels;
 
   if (prediction.direction === 'HIGHER') {
-    if (currentPrice >= takeProfit) return { outcome: 'won', price: currentPrice };
-    if (currentPrice <= stopLoss) return { outcome: 'lost', price: currentPrice };
+    if (currentPrice >= takeProfit) return { outcome: 'won', price: currentPrice, closedBy: 'tp_sl' };
+    if (currentPrice <= stopLoss) return { outcome: 'lost', price: currentPrice, closedBy: 'tp_sl' };
   } else {
-    if (currentPrice <= takeProfit) return { outcome: 'won', price: currentPrice };
-    if (currentPrice >= stopLoss) return { outcome: 'lost', price: currentPrice };
+    if (currentPrice <= takeProfit) return { outcome: 'won', price: currentPrice, closedBy: 'tp_sl' };
+    if (currentPrice >= stopLoss) return { outcome: 'lost', price: currentPrice, closedBy: 'tp_sl' };
   }
 
-  // Check expiry
+  // Check expiry: resolve to won/lost based on current price vs entry
   const age = Date.now() - new Date(prediction.timestamp).getTime();
   if (age > EXPIRY_MS) {
-    return { outcome: 'expired', price: currentPrice };
+    const entry = prediction.levels.entry;
+    const isWin = prediction.direction === 'HIGHER' ? currentPrice > entry : currentPrice < entry;
+    return { outcome: isWin ? 'won' : 'lost', price: currentPrice, closedBy: 'timeout' };
   }
 
   return null; // still pending
@@ -83,7 +85,7 @@ async function fetchKlines(
 function resolveFromKlines(
   prediction: StoredAnalysis,
   klines: Kline[],
-): { outcome: Outcome; price: number; timestamp: string } | null {
+): { outcome: Outcome; price: number; timestamp: string; closedBy?: CloseBy } | null {
   if (prediction.outcome !== 'pending') return null;
   if (prediction.direction === 'UNCLEAR') return null;
 
@@ -97,20 +99,22 @@ function resolveFromKlines(
 
     if (prediction.direction === 'HIGHER') {
       // Check SL first (conservative: if both hit in same candle, count as loss)
-      if (low <= stopLoss) return { outcome: 'lost', price: stopLoss, timestamp: candleTs };
-      if (high >= takeProfit) return { outcome: 'won', price: takeProfit, timestamp: candleTs };
+      if (low <= stopLoss) return { outcome: 'lost', price: stopLoss, timestamp: candleTs, closedBy: 'tp_sl' };
+      if (high >= takeProfit) return { outcome: 'won', price: takeProfit, timestamp: candleTs, closedBy: 'tp_sl' };
     } else {
-      if (high >= stopLoss) return { outcome: 'lost', price: stopLoss, timestamp: candleTs };
-      if (low <= takeProfit) return { outcome: 'won', price: takeProfit, timestamp: candleTs };
+      if (high >= stopLoss) return { outcome: 'lost', price: stopLoss, timestamp: candleTs, closedBy: 'tp_sl' };
+      if (low <= takeProfit) return { outcome: 'won', price: takeProfit, timestamp: candleTs, closedBy: 'tp_sl' };
     }
   }
 
-  // Check if the trade has expired based on age
+  // Check if the trade has timed out: resolve to won/lost based on last close vs entry
   const age = Date.now() - new Date(prediction.timestamp).getTime();
   if (age > EXPIRY_MS && klines.length > 0) {
     const lastKline = klines[klines.length - 1];
     const lastClose = parseFloat(lastKline[4]);
-    return { outcome: 'expired', price: lastClose, timestamp: new Date().toISOString() };
+    const entry = prediction.levels.entry;
+    const isWin = prediction.direction === 'HIGHER' ? lastClose > entry : lastClose < entry;
+    return { outcome: isWin ? 'won' : 'lost', price: lastClose, timestamp: new Date().toISOString(), closedBy: 'timeout' };
   }
 
   return null;
@@ -138,7 +142,7 @@ async function catchUpPendingTrades(
   }
 
   // Fetch klines for each symbol and resolve
-  const resolutions = new Map<string, { outcome: Outcome; price: number; timestamp: string }>();
+  const resolutions = new Map<string, { outcome: Outcome; price: number; timestamp: string; closedBy?: CloseBy }>();
 
   for (const [symbol, trades] of bySymbol) {
     // Start from the earliest trade's timestamp
@@ -182,6 +186,7 @@ async function catchUpPendingTrades(
         outcome: res.outcome,
         outcomePrice: res.price,
         outcomeTimestamp: res.timestamp,
+        ...(res.closedBy !== undefined && { closedBy: res.closedBy }),
       };
     }
     return item;
@@ -212,13 +217,13 @@ export function usePriceTracker({ history, onUpdate }: UsePriceTrackerOptions) {
   pricesRef.current = prices;
 
   // Track which symbols currently have active WebSocket connections
-  const socketsRef = useRef<Map<string, WebSocket>>(new Map());
+  const socketsRef = useRef<Map<Symbol, WebSocket>>(new Map());
   // Track reconnect attempt counts per symbol for exponential backoff
-  const reconnectAttemptsRef = useRef<Map<string, number>>(new Map());
+  const reconnectAttemptsRef = useRef<Map<Symbol, number>>(new Map());
   // Track reconnect timers so we can cancel on cleanup
-  const reconnectTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const reconnectTimersRef = useRef<Map<Symbol, ReturnType<typeof setTimeout>>>(new Map());
   // Throttle UI price updates (one timer per symbol)
-  const throttleTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const throttleTimersRef = useRef<Map<Symbol, ReturnType<typeof setTimeout>>>(new Map());
   // Latest price per symbol (updated on every tick, not throttled)
   const latestPricesRef = useRef<Record<string, number>>({});
   // Prevent catch-up from running more than once
@@ -236,7 +241,7 @@ export function usePriceTracker({ history, onUpdate }: UsePriceTrackerOptions) {
   }, [history]);
 
   // ─── Resolve pending predictions for a given symbol at a given price ───
-  function checkResolutions(symbol: string, price: number) {
+  function checkResolutions(symbol: Symbol, price: number) {
     const currentHistory = historyRef.current;
     const pending = currentHistory.filter(
       (h) => h.outcome === 'pending' && h.symbol === symbol,
@@ -260,6 +265,7 @@ export function usePriceTracker({ history, onUpdate }: UsePriceTrackerOptions) {
           outcome: result.outcome,
           outcomePrice: result.price,
           outcomeTimestamp: new Date().toISOString(),
+          ...(result.closedBy !== undefined && { closedBy: result.closedBy }),
         };
       }
       return item;
@@ -271,7 +277,7 @@ export function usePriceTracker({ history, onUpdate }: UsePriceTrackerOptions) {
   }
 
   // ─── Throttled UI price update ───
-  function scheduleUiUpdate(symbol: string, price: number) {
+  function scheduleUiUpdate(symbol: Symbol, price: number) {
     latestPricesRef.current[symbol] = price;
 
     // If a throttle timer already exists for this symbol, skip
@@ -290,7 +296,7 @@ export function usePriceTracker({ history, onUpdate }: UsePriceTrackerOptions) {
   }
 
   // ─── Open a WebSocket for a symbol ───
-  function openSocket(symbol: string) {
+  function openSocket(symbol: Symbol) {
     // Don't open a duplicate
     if (socketsRef.current.has(symbol)) return;
 
@@ -355,7 +361,7 @@ export function usePriceTracker({ history, onUpdate }: UsePriceTrackerOptions) {
   }
 
   // ─── Close a WebSocket for a symbol ───
-  function closeSocket(symbol: string) {
+  function closeSocket(symbol: Symbol) {
     const ws = socketsRef.current.get(symbol);
     if (ws) {
       console.log(`[PriceTracker] Closing WebSocket for ${symbol}`);
@@ -411,14 +417,20 @@ export function usePriceTracker({ history, onUpdate }: UsePriceTrackerOptions) {
         if (item.outcome !== 'pending') return item;
         const age = Date.now() - new Date(item.timestamp).getTime();
         if (age > EXPIRY_MS) {
+          const lastPrice = latestPricesRef.current[item.symbol];
+          // No real price available yet — leave pending, let the next WS tick or kline catch-up resolve it
+          if (!lastPrice) return item;
           changed = true;
-          const lastPrice = latestPricesRef.current[item.symbol] ?? item.levels.entry;
-          console.log(`[PriceTracker] ${item.symbol} expired after 24h @ ${lastPrice}`);
+          const entry = item.levels.entry;
+          const isWin = item.direction === 'HIGHER' ? lastPrice > entry : lastPrice < entry;
+          const outcome = isWin ? 'won' : 'lost';
+          console.log(`[PriceTracker] ${item.symbol} timed out after 24h @ ${lastPrice} -> ${outcome.toUpperCase()}`);
           return {
             ...item,
-            outcome: 'expired' as const,
+            outcome: (isWin ? 'won' : 'lost') as 'won' | 'lost',
             outcomePrice: lastPrice,
             outcomeTimestamp: new Date().toISOString(),
+            closedBy: 'timeout' as const,
           };
         }
         return item;

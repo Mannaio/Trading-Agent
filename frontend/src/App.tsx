@@ -110,31 +110,33 @@ export default function App() {
     [history],
   );
 
-  // Cancel a live trade — snapshot exit price, mark as cancelled
+  // Cancel a live trade — resolve to won/lost based on exit price vs entry, mark as manually closed
   const handleCancelTrade = useCallback(
     (id: string, exitPrice: number) => {
-      const next = history.map((item) =>
-        item.id === id
-          ? {
-              ...item,
-              outcome: 'cancelled' as const,
-              outcomePrice: exitPrice,
-              outcomeTimestamp: new Date().toISOString(),
-            }
-          : item,
-      );
+      const next = history.map((item) => {
+        if (item.id !== id) return item;
+        const isWin = item.direction === 'HIGHER' ? exitPrice > item.levels.entry : exitPrice < item.levels.entry;
+        return {
+          ...item,
+          outcome: (isWin ? 'won' : 'lost') as 'won' | 'lost',
+          outcomePrice: exitPrice,
+          outcomeTimestamp: new Date().toISOString(),
+          closedBy: 'manual' as const,
+        };
+      });
       setHistory(next);
       saveHistory(next);
-      setSelected((prev) =>
-        prev?.id === id
-          ? {
-              ...prev,
-              outcome: 'cancelled' as const,
-              outcomePrice: exitPrice,
-              outcomeTimestamp: new Date().toISOString(),
-            }
-          : prev,
-      );
+      setSelected((prev) => {
+        if (!prev || prev.id !== id) return prev;
+        const isWin = prev.direction === 'HIGHER' ? exitPrice > prev.levels.entry : exitPrice < prev.levels.entry;
+        return {
+          ...prev,
+          outcome: (isWin ? 'won' : 'lost') as 'won' | 'lost',
+          outcomePrice: exitPrice,
+          outcomeTimestamp: new Date().toISOString(),
+          closedBy: 'manual' as const,
+        };
+      });
     },
     [history],
   );

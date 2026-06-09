@@ -105,7 +105,7 @@ EMA EXHAUSTION SIGNAL
 - If this pattern appears on 2 or more timeframes simultaneously, increase confidence by 10–15 probability points.
 
 PAST LESSONS
-- If the current setup pattern matches a past lesson (same indicator state, same setup type), name the match explicitly in your conclusion and reduce probability by 10–15 points.
+- If the current setup pattern matches a past lesson (same indicator state, same setup type), name the match explicitly in your conclusion and reduce probability by 5-10 points.
 
 THESIS FEEDBACK
 - Evaluate the user's reasoning against each timeframe's data. Agree or disagree honestly with evidence from the analysis.

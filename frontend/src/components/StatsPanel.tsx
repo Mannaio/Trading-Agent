@@ -28,7 +28,8 @@ export function StatsPanel({ history }: StatsPanelProps) {
   const lost = resolved.filter((h) => h.outcome === 'lost');
   const expired = history.filter((h) => h.outcome === 'expired');
 
-  // Aggregate net P&L by currency (includes won, lost, and cancelled trades)
+  // Aggregate net P&L by currency. New trades: won/lost covers all closedBy variants.
+  // Legacy: cancelled entries (pre-migration) are included for backward compat.
   const pnlByCurrency: Record<string, number> = {};
   for (const h of [...resolved, ...cancelled]) {
     const r = tradeNetPnL(h);
@@ -107,7 +108,7 @@ export function StatsPanel({ history }: StatsPanelProps) {
           {resolved.length > 0 && (
             <div>
               <div className="flex justify-between text-[10px] text-gray-400 mb-1">
-                <span>{won.length}W / {lost.length}L / {cancelled.length}C / {expired.length}E</span>
+                <span>{won.length}W / {lost.length}L{cancelled.length > 0 ? ` / ${cancelled.length}C` : ''} / {expired.length}E</span>
                 <span>{resolved.length} resolved</span>
               </div>
               <div className="h-2 bg-gray-700 rounded-full overflow-hidden flex">

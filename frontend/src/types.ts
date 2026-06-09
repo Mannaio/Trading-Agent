@@ -28,6 +28,12 @@ export type Direction = 'HIGHER' | 'LOWER' | 'UNCLEAR';
 // ─── Trade Outcome ───
 export type Outcome = 'review' | 'pending' | 'won' | 'lost' | 'expired' | 'cancelled';
 
+// ─── How a trade was closed (set on won/lost outcomes only) ───
+// 'tp_sl'  — take-profit or stop-loss hit naturally
+// 'manual' — user cancelled a live trade; won/lost determined by exit vs entry price
+// 'timeout' — 24h TTL elapsed; won/lost determined by last known price vs entry
+export type CloseBy = 'tp_sl' | 'manual' | 'timeout';
+
 // ─── Indicator values (optional structured data) ───
 export interface Indicators {
   trend: { '4h': TrendDirection; '1h': TrendDirection; '15m': TrendDirection };
@@ -116,6 +122,7 @@ export interface StoredAnalysis extends AnalysisResponse {
   outcome: Outcome;
   outcomeTimestamp?: string;
   outcomePrice?: number;
+  closedBy?: CloseBy;           // how the trade was closed (only set on won/lost)
   feedback?: string;            // user's lesson learned (set after lost trades)
   tradeAmount?: number;         // asset quantity (e.g. 0.2 ETH)
 }

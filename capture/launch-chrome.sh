@@ -8,5 +8,7 @@ USER_DATA_DIR="$HOME/Library/Application Support/Google/Chrome-Debug"
 
 /Applications/Google\ Chrome.app/Contents/MacOS/Google\ Chrome \
   --remote-debugging-port=9222 \
+  --remote-allow-origins=* \
+  --disable-extensions \
   --user-data-dir="$USER_DATA_DIR" \
   "$@"

@@ -92,8 +92,10 @@ The frontend proxies `/api/*` to the worker at `localhost:8787`.
    ```bash
    cd capture && npm run dev
    ```
-3. Open TradingView with your chart layout in Chrome.
+3. Open TradingView with your chart layout in debug Chrome.
 4. Click "Capture from TradingView" in the Trading-Agent app.
+
+> Debug Chrome launches with extensions disabled (`--disable-extensions`) so CDP capture stays reliable. You can keep the app and TradingView in the same debug Chrome window.
 
 ## API
 

@@ -1,4 +1,5 @@
 import { chromium, type Page } from 'playwright';
+import { assertTradingViewTabOpen, CDP_CONNECT_HINT, CDP_CONNECT_OPTIONS } from './cdp-prep.js';
 
 export interface CaptureOptions {
   symbol?: string;
@@ -26,10 +27,21 @@ const SYMBOL_SWITCH_WAIT_MS = 2000;
 const MAX_LOADING_WAIT_MS = 10000; // Max time to wait for chart to load
 
 export async function captureCharts(options: CaptureOptions = {}): Promise<CaptureResult> {
-  const cdpUrl = options.cdpUrl ?? 'http://localhost:9222';
+  const cdpUrl = options.cdpUrl ?? 'http://127.0.0.1:9222';
   const requestedSymbol = options.symbol;
 
-  const browser = await chromium.connectOverCDP(cdpUrl);
+  await assertTradingViewTabOpen(cdpUrl);
+
+  let browser: Awaited<ReturnType<typeof chromium.connectOverCDP>>;
+  try {
+    browser = await chromium.connectOverCDP(cdpUrl, CDP_CONNECT_OPTIONS);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (message.includes('Timeout') && message.includes('connectOverCDP')) {
+      throw new Error(`${CDP_CONNECT_HINT} (${message})`);
+    }
+    throw err;
+  }
 
   try {
     const tvPage = await findTradingViewTab(browser);
