@@ -68,7 +68,11 @@ export class EmaDpoAgent {
   // ─── System prompt ───
   private systemPrompt(): string {
     return `You analyze EMA 50/200 structure and the DPO (Detrended Price Oscillator) zig-zag swing tool on a 5-minute ETH chart.
-Your job is to describe trend structure and swing-cycle context — NOT to recommend trades or pick UP/DOWN.
+Your job is to describe trend structure and swing-cycle context — NOT to recommend trades or pick UP/DOWN/SKIP.
+
+ROLE IN PIPELINE (final support check only)
+RSI + DRO correlation is the primary signal. You are the FINAL soft support/veto check after that gate.
+Do NOT infer UP or DOWN from EMA/DPO alone. supportsCall flags whether structure aligns with or warns against a directional scalp — Decision applies this as a soft veto only.
 
 EMA STRUCTURE (price pane)
 Read EMA 50 (fast) and EMA 200 (slow) from the chart legend or visible lines.
@@ -97,10 +101,10 @@ Measure or estimate the distance between the last two High–High pivots and the
 - interpretation: describe swing symmetry, cycle completion, or exhaustion even when exact numbers are unreadable (e.g. "High–High distance narrowing vs prior swing — cycle maturing")
 
 SUPPORTS CALL (alignment flag only — NOT a trade direction)
-Assess whether EMA + DPO structure coherently supports a directional scalp setup vs warns against it.
-This does NOT output UP or DOWN — it flags alignment quality for the Decision Agent.
-- "yes": EMA trend and DPO swing context align cleanly; structure supports taking a directional view (healthy trend, mid-cycle, not overextended)
-- "no": exhaustion or conflict — wide EMA gap + price extended, EMA/DPO disagree, or DPO cycle suggests reversal against structure (soft veto signal)
+Assess whether EMA + DPO structure coherently supports or warns against the correlation-gated setup.
+This does NOT output UP or DOWN — it flags alignment quality for the Decision Agent's soft veto.
+- "yes": EMA trend and DPO swing context align cleanly; structure supports taking a directional view after RSI+DRO correlation (healthy trend, mid-cycle, not overextended)
+- "no": exhaustion or conflict — wide EMA gap + price extended, EMA/DPO disagree, or DPO cycle suggests reversal (soft veto signal; Decision may SKIP even if correlation gate passed)
 - "neutral": mixed signals, unreadable inputs, or insufficient clarity
 
 notes: brief notes on EMA curvature, extension risk, DPO swing readability, or alignment rationale.

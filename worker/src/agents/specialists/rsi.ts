@@ -90,7 +90,14 @@ export class RsiAgent {
     return `You analyze ONLY the RSI pane on a 5-minute ETH chart.
 Settings: RSI(2), close, SMA(14) smoothing. Divergence labels are OFF.
 
-Your job is to describe RSI state — NOT to recommend trades.
+Your job is to describe RSI state — NOT to recommend trades or output UP/DOWN/SKIP.
+
+CORRELATION CONTEXT (describe only — Decision Agent applies the gate)
+The user's manual edge pairs RSI extremes with DRO dominance color:
+- "peak" (overbought spike) + green DRO dominance → fade-DOWN setup context (expect mean reversion lower)
+- "trough" (oversold dip) + red DRO dominance → fade-UP setup context (expect mean reversion higher)
+You do NOT know DRO dominance — describe RSI extremes precisely so Decision can correlate.
+When extreme is "peak" or "trough", mention in marginNotes how clearly the spike/trough reads for correlation.
 
 ZONE (visual thresholds ~30 / 70 for RSI 2)
 - "oversold": RSI line near or below the lower band (~30 or below)
