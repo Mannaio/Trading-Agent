@@ -3,7 +3,7 @@ import type { EmaDpoReport, PolymarketRequest } from '../../polymarket/types';
 
 /**
  * EmaDpoAgent — EMA + DPO specialist in the Polymarket pipeline.
- * Vision-only analysis of the price pane (EMA 50/200) and DPO zig-zag swings.
+ * Vision-only analysis of EMA 50/200 structure and DPO zig-zag swing distances on a 5-minute ETH chart.
  * Emits structured EmaDpoReport — no UP/DOWN/SKIP trade calls.
  */
 export class EmaDpoAgent {
@@ -43,7 +43,7 @@ export class EmaDpoAgent {
 
     userContent.push({
       type: 'text',
-      text: '5-minute ETH chart — analyze the price pane (EMA 50 / EMA 200) and DPO zig-zag swing distances:',
+      text: '5-minute ETH chart — analyze the price pane (EMA 50/200) and DPO zig-zag swing tool if visible:',
     });
     userContent.push({
       type: 'image_url',
@@ -67,40 +67,43 @@ export class EmaDpoAgent {
 
   // ─── System prompt ───
   private systemPrompt(): string {
-    return `You analyze the price pane on a 5-minute ETH chart with EMA 50 and EMA 200 overlays,
-plus the DPO (Detrended Price Oscillator) zig-zag tool showing swing distances on price.
-Your job is to describe EMA structure and DPO swing context — NOT to recommend trades.
+    return `You analyze EMA 50/200 structure and the DPO (Detrended Price Oscillator) zig-zag swing tool on a 5-minute ETH chart.
+Your job is to describe trend structure and swing-cycle context — NOT to recommend trades or pick UP/DOWN.
 
-EMA BIAS (structure only — not a trade call)
-- "bullish": EMA 50 above EMA 200, or price holding above both with upward slope
-- "bearish": EMA 50 below EMA 200, or price holding below both with downward slope
-- "neutral": flat/crossed EMAs, choppy overlap, or unclear
+EMA STRUCTURE (price pane)
+Read EMA 50 (fast) and EMA 200 (slow) from the chart legend or visible lines.
 
-EMA GAP (distance between EMA 50 and EMA 200)
-- "tight": EMAs close together (recent cross or consolidation)
-- "moderate": visible separation but not stretched
-- "wide": EMAs clearly separated with sustained trend
+emaBias — crossover / trend structure:
+- "bullish": EMA 50 above EMA 200 (golden cross structure)
+- "bearish": EMA 50 below EMA 200 (death cross structure)
+- "neutral": EMAs converging, recently crossed, or structure unclear
 
-PRICE VS EMA (current price relative to EMA 50 and EMA 200)
-- "extended_above": price notably above both EMAs (stretched upward)
-- "between": price between EMA 50 and EMA 200, or hugging the band
-- "extended_below": price notably below both EMAs (stretched downward)
-- "unclear": price/EMA relationship unreadable
+emaGap — distance between EMA 50 and EMA 200:
+If legend values are readable, gap % = |EMA50 − EMA200| / min(EMA50, EMA200) × 100.
+- "tight": < 1% or visually converging / recently crossed
+- "moderate": ~1–3%
+- "wide": > 3% or visually well separated in a strong trend
 
-DPO SWING (zig-zag tool on price pane)
-Read the DPO zig-zag labels or measure visually:
-- lastHighHighDistance: numeric distance between the last two High pivots (High–High), or null if unreadable
-- lastLowLowDistance: numeric distance between the last two Low pivots (Low–Low), or null if unreadable
-- interpretation: describe swing symmetry, cycle length, or trend of distances if numbers are not readable
+priceVsEma — price position relative to both EMAs:
+- "extended_above": price clearly extended well above both EMAs (overextended risk)
+- "between": price between EMA 50 and EMA 200, or hugging one EMA without clear extension
+- "extended_below": price clearly extended well below both EMAs (overextended risk)
+- "unclear": price pane unreadable or ambiguous
 
-SUPPORTS CALL (alignment flag — NOT a direction)
-Assess whether EMA structure and DPO swings together support taking a directional Polymarket bet.
-You do NOT choose UP or DOWN — only flag structural alignment:
-- "yes": EMA bias and DPO swing context align cleanly; structure supports a directional call
-- "no": conflicting EMA/DPO signals, stretched against trend, or poor swing structure — soft veto
-- "neutral": mixed, unclear, or insufficient data
+DPO SWING (zig-zag tool on price pane, if visible)
+Measure or estimate the distance between the last two High–High pivots and the last two Low–Low pivots on the DPO zig-zag.
+- lastHighHighDistance: numeric distance in price units if readable, else null
+- lastLowLowDistance: numeric distance in price units if readable, else null
+- interpretation: describe swing symmetry, cycle completion, or exhaustion even when exact numbers are unreadable (e.g. "High–High distance narrowing vs prior swing — cycle maturing")
 
-notes: brief notes on EMA cross timing, gap trend, price extension, DPO cycle, or readability issues.
+SUPPORTS CALL (alignment flag only — NOT a trade direction)
+Assess whether EMA + DPO structure coherently supports a directional scalp setup vs warns against it.
+This does NOT output UP or DOWN — it flags alignment quality for the Decision Agent.
+- "yes": EMA trend and DPO swing context align cleanly; structure supports taking a directional view (healthy trend, mid-cycle, not overextended)
+- "no": exhaustion or conflict — wide EMA gap + price extended, EMA/DPO disagree, or DPO cycle suggests reversal against structure (soft veto signal)
+- "neutral": mixed signals, unreadable inputs, or insufficient clarity
+
+notes: brief notes on EMA curvature, extension risk, DPO swing readability, or alignment rationale.
 
 Do NOT recommend UP, DOWN, or SKIP.
 Do NOT output trade calls or Polymarket directions.
