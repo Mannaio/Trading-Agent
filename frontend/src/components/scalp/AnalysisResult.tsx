@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import type { StoredAnalysis, Direction } from '../types';
-import { DIRECTION_CONFIG, OUTCOME_CONFIG } from '../types';
+import type { StoredAnalysis, Direction } from '../../types';
+import { DIRECTION_CONFIG, OUTCOME_CONFIG } from '../../types';
 
 /** Format price with appropriate precision based on symbol and magnitude */
 function formatPrice(value: number, symbol: string): string {

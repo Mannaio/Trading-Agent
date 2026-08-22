@@ -1,5 +1,5 @@
 import { useState, useRef, useCallback } from 'react';
-import type { Symbol, Timeframe, AnalysisRequest, ScreenshotMeta } from '../types';
+import type { Symbol, Timeframe, AnalysisRequest, ScreenshotMeta } from '../../types';
 
 type DroPivot = 'LOW' | 'HIGH';
 

@@ -1,10 +1,12 @@
 import { useState, useEffect, useCallback } from 'react';
-import { AnalysisForm } from './components/AnalysisForm';
-import { AnalysisResult } from './components/AnalysisResult';
+import { AnalysisForm } from './components/scalp/AnalysisForm';
+import { AnalysisResult } from './components/scalp/AnalysisResult';
 import { HistoryList } from './components/HistoryList';
 import { StatsPanel } from './components/StatsPanel';
 import { usePriceTracker } from './hooks/usePriceTracker';
 import type { AnalysisRequest, AnalysisResponse, StoredAnalysis, Direction, PortfolioContext } from './types';
+
+type AppMode = 'scalp' | 'polymarket';
 
 const STORAGE_KEY = 'trading-agent-history';
 const MAX_HISTORY = 50;
@@ -33,6 +35,7 @@ function saveHistory(list: StoredAnalysis[]): void {
 }
 
 export default function App() {
+  const [mode, setMode] = useState<AppMode>('scalp');
   const [history, setHistory] = useState<StoredAnalysis[]>([]);
   const [selected, setSelected] = useState<StoredAnalysis | null>(null);
   const [loading, setLoading] = useState(false);
@@ -261,11 +264,33 @@ export default function App() {
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 flex flex-col">
       {/* Header */}
       <header className="border-b border-gray-800 bg-gray-900/80 backdrop-blur-sm sticky top-0 z-10">
-        <div className="max-w-6xl mx-auto px-4 py-4 flex items-center gap-3">
-          <span className="text-2xl">🤖</span>
-          <div>
-            <h1 className="text-xl font-bold text-white leading-tight">Trading Agent</h1>
-            <p className="text-xs text-gray-500">Scalp prediction &middot; 0.5% target</p>
+        <div className="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">🤖</span>
+            <div>
+              <h1 className="text-xl font-bold text-white leading-tight">Trading Agent</h1>
+              <p className="text-xs text-gray-500">Scalp prediction &middot; 0.5% target</p>
+            </div>
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={() => setMode('scalp')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                mode === 'scalp' ? 'active bg-blue-600 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-800'
+              }`}
+            >
+              Scalp
+            </button>
+            <button
+              type="button"
+              onClick={() => setMode('polymarket')}
+              className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                mode === 'polymarket' ? 'active bg-blue-600 text-white' : 'text-gray-400 hover:text-white hover:bg-gray-800'
+              }`}
+            >
+              Polymarket
+            </button>
           </div>
         </div>
       </header>
@@ -285,39 +310,45 @@ export default function App() {
           </div>
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
-          {/* Left — Form */}
-          <div className="lg:col-span-5">
-            <div className="bg-gray-800/50 rounded-lg p-6 border border-gray-700 lg:sticky lg:top-24">
-              <AnalysisForm
-                onSubmit={handleAnalyze}
-                isLoading={loading}
-                portfolioSizeUsd={portfolioSizeUsd}
-                maxRiskPercent={maxRiskPercent}
-                onPortfolioSizeChange={setPortfolioSizeUsd}
-                onMaxRiskPercentChange={setMaxRiskPercent}
+        {mode === 'scalp' ? (
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            {/* Left — Form */}
+            <div className="lg:col-span-5">
+              <div className="bg-gray-800/50 rounded-lg p-6 border border-gray-700 lg:sticky lg:top-24">
+                <AnalysisForm
+                  onSubmit={handleAnalyze}
+                  isLoading={loading}
+                  portfolioSizeUsd={portfolioSizeUsd}
+                  maxRiskPercent={maxRiskPercent}
+                  onPortfolioSizeChange={setPortfolioSizeUsd}
+                  onMaxRiskPercentChange={setMaxRiskPercent}
+                />
+              </div>
+            </div>
+
+            {/* Right — Results, Stats & History */}
+            <div className="lg:col-span-7 space-y-6">
+              <AnalysisResult
+                analysis={selected}
+                livePrice={selected ? prices[selected.symbol] ?? null : null}
+                onSaveFeedback={handleSaveFeedback}
+                onConfirmTrade={handleConfirmTrade}
+                onRefuseTrade={handleRefuseTrade}
+                onCancelTrade={handleCancelTrade}
+              />
+              <StatsPanel history={history} />
+              <HistoryList
+                history={history}
+                onSelect={setSelected}
+                selectedId={selected?.id ?? null}
               />
             </div>
           </div>
-
-          {/* Right — Results, Stats & History */}
-          <div className="lg:col-span-7 space-y-6">
-            <AnalysisResult
-              analysis={selected}
-              livePrice={selected ? prices[selected.symbol] ?? null : null}
-              onSaveFeedback={handleSaveFeedback}
-              onConfirmTrade={handleConfirmTrade}
-              onRefuseTrade={handleRefuseTrade}
-              onCancelTrade={handleCancelTrade}
-            />
-            <StatsPanel history={history} />
-            <HistoryList
-              history={history}
-              onSelect={setSelected}
-              selectedId={selected?.id ?? null}
-            />
+        ) : (
+          <div className="bg-gray-800/50 rounded-lg p-12 border border-gray-700 text-center">
+            <p className="text-gray-400 text-lg">Polymarket mode — coming in Task 11</p>
           </div>
-        </div>
+        )}
       </main>
 
       {/* Footer */}
