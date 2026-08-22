@@ -1,5 +1,6 @@
 import express from 'express';
 import { captureCharts } from './capture.js';
+import { capturePolymarketCharts } from './capture-polymarket.js';
 
 const app = express();
 const PORT = 3001;
@@ -24,6 +25,19 @@ app.get('/capture', async (req, res) => {
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Capture failed';
     console.error('Capture error:', message);
+    res.status(500).json({ error: message });
+  }
+});
+
+app.get('/capture/polymarket', async (req, res) => {
+  const symbol = (req.query.symbol as string) ?? 'ETHUSDT';
+
+  try {
+    const result = await capturePolymarketCharts({ symbol });
+    res.json(result);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Polymarket capture failed';
+    console.error('Polymarket capture error:', message);
     res.status(500).json({ error: message });
   }
 });

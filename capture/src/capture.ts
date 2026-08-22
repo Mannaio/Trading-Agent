@@ -120,7 +120,7 @@ export async function captureCharts(options: CaptureOptions = {}): Promise<Captu
   }
 }
 
-async function waitForChartToLoad(page: Page): Promise<void> {
+export async function waitForChartToLoad(page: Page): Promise<void> {
   console.log(`[Capture] Waiting for chart to fully load...`);
   
   // Step 1: Wait for any loading spinners to disappear
@@ -184,7 +184,7 @@ async function waitForChartToLoad(page: Page): Promise<void> {
   await page.waitForTimeout(3000);
 }
 
-async function takeNativeSnapshot(page: Page): Promise<string> {
+export async function takeNativeSnapshot(page: Page): Promise<string> {
   console.log(`[Capture] Taking screenshot of full viewport...`);
   
   // Hide any floating UI elements that shouldn't be in the screenshot
@@ -234,7 +234,7 @@ async function takeNativeSnapshot(page: Page): Promise<string> {
  * This is taken from the exact same rendered frame as the main screenshot so it cannot
  * disagree with what is visible in the chart.
  */
-async function captureRsiLegend(page: Page): Promise<string | null> {
+export async function captureRsiLegend(page: Page): Promise<string | null> {
   const handles = await page.$$('[class*="study"]');
   for (const el of handles) {
     const text = await el.evaluate((e: Element) => (e.textContent || '').replace(/\s+/g, ' ').trim());
@@ -262,7 +262,7 @@ async function captureRsiLegend(page: Page): Promise<string | null> {
  * if the rightmost cycle number sits BELOW the 0 axis → last pivot was LOW, heading UP.
  * If ABOVE the 0 axis → last pivot was HIGH, heading DOWN.
  */
-async function captureDroPane(page: Page): Promise<string | null> {
+export async function captureDroPane(page: Page): Promise<string | null> {
   const handles = await page.$$('[class*="pane"], [class*="study"]');
   for (const el of handles) {
     const text = await el.evaluate((e: Element) => (e.textContent || '').replace(/\s+/g, ' ').trim());
@@ -283,7 +283,7 @@ async function captureDroPane(page: Page): Promise<string | null> {
   return null;
 }
 
-async function extractRsiValue(page: Page): Promise<{ value: number | null; rawText: string | null }> {
+export async function extractRsiValue(page: Page): Promise<{ value: number | null; rawText: string | null }> {
   return page.evaluate(() => {
     const RE = /RSI[\s\d]*close\s*([\d.]+)/i;
 
@@ -347,7 +347,7 @@ async function waitForRsiChange(
   return fallback;
 }
 
-async function findTradingViewTab(
+export async function findTradingViewTab(
   browser: Awaited<ReturnType<typeof chromium.connectOverCDP>>
 ): Promise<Page | null> {
   for (const context of browser.contexts()) {
@@ -360,7 +360,7 @@ async function findTradingViewTab(
   return null;
 }
 
-async function switchSymbol(page: Page, symbol: string): Promise<void> {
+export async function switchSymbol(page: Page, symbol: string): Promise<void> {
   console.log(`[Capture] === SWITCHING SYMBOL TO: ${symbol} ===`);
 
   // Step 1: Click on the symbol in the top-left to open Symbol Search modal
@@ -403,7 +403,7 @@ async function switchSymbol(page: Page, symbol: string): Promise<void> {
   console.log(`[Capture] === DONE. Chart now shows: ${newSymbol} ===`);
 }
 
-async function getCurrentSymbol(page: Page): Promise<string | null> {
+export async function getCurrentSymbol(page: Page): Promise<string | null> {
   const symbolEl = await page.$('#header-toolbar-symbol-search');
   if (symbolEl) {
     const text = await symbolEl.textContent();
@@ -414,7 +414,7 @@ async function getCurrentSymbol(page: Page): Promise<string | null> {
   return null;
 }
 
-async function switchTimeframe(page: Page, selector: string, label: string): Promise<void> {
+export async function switchTimeframe(page: Page, selector: string, label: string): Promise<void> {
   const btn = await page.$(selector);
   if (btn) {
     await btn.click();
