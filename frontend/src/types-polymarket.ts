@@ -107,3 +107,14 @@ export const POLYMARKET_CALL_CONFIG: Record<
   DOWN: { label: 'DOWN', color: 'text-red-400', emoji: '🔴' },
   SKIP: { label: 'SKIP', color: 'text-yellow-400', emoji: '🟡' },
 };
+
+export const POLYMARKET_OUTCOME_CONFIG: Record<
+  PolymarketOutcome,
+  { label: string; color: string; bg: string; emoji: string }
+> = {
+  review: { label: 'REVIEW', color: 'text-amber-400', bg: 'bg-amber-500/20 border-amber-500/40', emoji: '🔍' },
+  took: { label: 'TOOK', color: 'text-blue-400', bg: 'bg-blue-500/20 border-blue-500/40', emoji: '✅' },
+  skipped: { label: 'SKIPPED', color: 'text-gray-400', bg: 'bg-gray-500/20 border-gray-500/40', emoji: '⏭️' },
+  won: { label: 'WON', color: 'text-emerald-400', bg: 'bg-emerald-500/20 border-emerald-500/40', emoji: '🏆' },
+  lost: { label: 'LOST', color: 'text-red-400', bg: 'bg-red-500/20 border-red-500/40', emoji: '❌' },
+};

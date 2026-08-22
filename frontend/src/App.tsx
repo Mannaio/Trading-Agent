@@ -3,12 +3,22 @@ import { AnalysisForm } from './components/scalp/AnalysisForm';
 import { AnalysisResult } from './components/scalp/AnalysisResult';
 import { HistoryList } from './components/HistoryList';
 import { StatsPanel } from './components/StatsPanel';
+import { PolymarketForm } from './components/polymarket/PolymarketForm';
+import { PolymarketResult } from './components/polymarket/PolymarketResult';
+import { PolymarketHistoryList } from './components/polymarket/PolymarketHistoryList';
 import { usePriceTracker } from './hooks/usePriceTracker';
 import type { AnalysisRequest, AnalysisResponse, StoredAnalysis, Direction, PortfolioContext } from './types';
+import type {
+  PolymarketRequest,
+  PolymarketResponse,
+  StoredPolymarketAnalysis,
+  PolymarketOutcome,
+} from './types-polymarket';
 
 type AppMode = 'scalp' | 'polymarket';
 
 const STORAGE_KEY = 'trading-agent-history';
+const POLYMARKET_STORAGE_KEY = 'trading-agent-polymarket-history';
 const MAX_HISTORY = 50;
 
 function uid(): string {
@@ -34,11 +44,32 @@ function saveHistory(list: StoredAnalysis[]): void {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(list.slice(0, MAX_HISTORY)));
 }
 
+function loadPolymarketHistory(): StoredPolymarketAnalysis[] {
+  try {
+    const raw = localStorage.getItem(POLYMARKET_STORAGE_KEY);
+    if (!raw) return [];
+    const parsed: StoredPolymarketAnalysis[] = JSON.parse(raw);
+    return parsed.map((item) => ({
+      ...item,
+      outcome: item.outcome ?? 'review',
+    }));
+  } catch {
+    return [];
+  }
+}
+
+function savePolymarketHistory(list: StoredPolymarketAnalysis[]): void {
+  localStorage.setItem(POLYMARKET_STORAGE_KEY, JSON.stringify(list.slice(0, MAX_HISTORY)));
+}
+
 export default function App() {
   const [mode, setMode] = useState<AppMode>('scalp');
   const [history, setHistory] = useState<StoredAnalysis[]>([]);
   const [selected, setSelected] = useState<StoredAnalysis | null>(null);
+  const [polymarketHistory, setPolymarketHistory] = useState<StoredPolymarketAnalysis[]>([]);
+  const [selectedPolymarket, setSelectedPolymarket] = useState<StoredPolymarketAnalysis | null>(null);
   const [loading, setLoading] = useState(false);
+  const [polymarketLoading, setPolymarketLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [portfolioSizeUsd, setPortfolioSizeUsd] = useState<number>(() => {
     const saved = localStorage.getItem('portfolio-size');
@@ -53,6 +84,10 @@ export default function App() {
     const h = loadHistory();
     setHistory(h);
     if (h.length > 0) setSelected(h[0]);
+
+    const pm = loadPolymarketHistory();
+    setPolymarketHistory(pm);
+    if (pm.length > 0) setSelectedPolymarket(pm[0]);
   }, []);
 
   useEffect(() => {
@@ -260,6 +295,67 @@ export default function App() {
     [history],
   );
 
+  const handlePolymarketAnalyze = useCallback(
+    async (req: PolymarketRequest) => {
+      setPolymarketLoading(true);
+      setError(null);
+
+      try {
+        const res = await fetch('/api/polymarket/analyze', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(req),
+        });
+
+        if (!res.ok) {
+          const data = await res.json().catch(() => ({}));
+          throw new Error(
+            (data as { error?: string }).error || `Request failed (${res.status})`,
+          );
+        }
+
+        const data: PolymarketResponse = await res.json();
+
+        const stored: StoredPolymarketAnalysis = {
+          ...data,
+          id: uid(),
+          symbol: req.symbol,
+          notes: req.notes,
+          marketPrices: req.marketPrices,
+          outcome: 'review',
+        };
+
+        const next = [stored, ...polymarketHistory].slice(0, MAX_HISTORY);
+        setPolymarketHistory(next);
+        savePolymarketHistory(next);
+        setSelectedPolymarket(stored);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : 'Unexpected error');
+      } finally {
+        setPolymarketLoading(false);
+      }
+    },
+    [polymarketHistory],
+  );
+
+  const handlePolymarketOutcome = useCallback(
+    (id: string, outcome: PolymarketOutcome) => {
+      const next = polymarketHistory.map((item) =>
+        item.id === id
+          ? { ...item, outcome, outcomeTimestamp: new Date().toISOString() }
+          : item,
+      );
+      setPolymarketHistory(next);
+      savePolymarketHistory(next);
+      setSelectedPolymarket((prev) =>
+        prev?.id === id
+          ? { ...prev, outcome, outcomeTimestamp: new Date().toISOString() }
+          : prev,
+      );
+    },
+    [polymarketHistory],
+  );
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-gray-900 via-gray-900 to-gray-800 flex flex-col">
       {/* Header */}
@@ -345,8 +441,24 @@ export default function App() {
             </div>
           </div>
         ) : (
-          <div className="bg-gray-800/50 rounded-lg p-12 border border-gray-700 text-center">
-            <p className="text-gray-400 text-lg">Polymarket mode — coming in Task 11</p>
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            <div className="lg:col-span-5">
+              <div className="bg-gray-800/50 rounded-lg p-6 border border-gray-700 lg:sticky lg:top-24">
+                <PolymarketForm onSubmit={handlePolymarketAnalyze} isLoading={polymarketLoading} />
+              </div>
+            </div>
+
+            <div className="lg:col-span-7 space-y-6">
+              <PolymarketResult
+                analysis={selectedPolymarket}
+                onOutcome={handlePolymarketOutcome}
+              />
+              <PolymarketHistoryList
+                history={polymarketHistory}
+                onSelect={setSelectedPolymarket}
+                selectedId={selectedPolymarket?.id ?? null}
+              />
+            </div>
           </div>
         )}
       </main>
