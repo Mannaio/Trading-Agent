@@ -2,6 +2,7 @@ import OpenAI from 'openai';
 import {
   applyCorrelationGate,
   applyMarketPriceEdge,
+  applyRsiExtremityAdjustments,
   computeMaxBuyCents,
 } from '../../polymarket/decision-gate';
 import type {
@@ -60,7 +61,8 @@ export class DecisionAgent {
       };
     }
 
-    const { confidence, reasoning } = await this.llmDecide(input, gateCall);
+    const { confidence: llmConfidence, reasoning } = await this.llmDecide(input, gateCall);
+    const confidence = applyRsiExtremityAdjustments(llmConfidence, rsi, gateCall);
     const { maxBuyUpCents, maxBuyDownCents } = computeMaxBuyCents(confidence);
     const { call, edgeNote } = applyMarketPriceEdge(
       gateCall,
@@ -121,6 +123,7 @@ If EMA+DPO supportsCall is "no" and gate was UP or DOWN, the pipeline already do
 Your job: assign confidence 0-100 based on report quality, RSI roomToMove, DRO alert-cycle context, and EMA+DPO support alignment.
 Higher confidence when: clear RSI extreme, fresh or stable dominance, roomToMove supports the fade direction, EMA+DPO supportsCall is "yes".
 Lower confidence when: marginal extreme, unclear dominance notes, limited roomToMove, or EMA+DPO is "neutral".
+RSI numeric extremity (rsiValue) is scored separately after your response — still report it accurately. Values near 99+ (peak) or below 2 (trough) are the strongest fade signals on RSI(2).
 Do not invent indicator values not in the reports.
 
 RESPONSE FORMAT — respond ONLY with valid JSON:
