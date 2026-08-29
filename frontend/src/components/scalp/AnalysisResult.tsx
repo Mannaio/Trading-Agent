@@ -277,6 +277,39 @@ export function AnalysisResult({ analysis, livePrice, onSaveFeedback, onConfirmT
           {analysis.recommendationReasoning && (
             <p className="text-sm text-gray-300">{analysis.recommendationReasoning}</p>
           )}
+          {analysis.srSnapshot && (
+            <div className="mt-3 space-y-1 text-xs text-gray-400">
+              <p>
+                <span className="text-gray-500">S/R gate:</span>{' '}
+                <span className="text-gray-200 font-medium">{analysis.srSnapshot.gate.replaceAll('_', ' ')}</span>
+                {analysis.srSnapshot.pathClearToTp
+                  ? ' · path to 0.5% TP is clear'
+                  : ' · 0.5% TP path is blocked'}
+              </p>
+              {analysis.srSnapshot.blocking && (
+                <p>
+                  Blocking {analysis.srSnapshot.blocking.kind} at{' '}
+                  <span className="text-white">{formatPrice(analysis.srSnapshot.blocking.price, analysis.symbol)}</span>
+                  {' '}({(analysis.srSnapshot.blocking.distancePct * 100).toFixed(2)}%, {analysis.srSnapshot.blocking.timeframe})
+                </p>
+              )}
+              {analysis.srSnapshot.backing && (
+                <p>
+                  Backing {analysis.srSnapshot.backing.kind} at{' '}
+                  <span className="text-white">{formatPrice(analysis.srSnapshot.backing.price, analysis.symbol)}</span>
+                  {' '}({(analysis.srSnapshot.backing.distancePct * 100).toFixed(2)}%, {analysis.srSnapshot.backing.timeframe})
+                </p>
+              )}
+              {analysis.srSnapshot.triggerCondition && (
+                <p className="text-yellow-300">
+                  Re-enter when {analysis.srSnapshot.triggerCondition}
+                  {analysis.srSnapshot.triggerPrice != null && (
+                    <> ({formatPrice(analysis.srSnapshot.triggerPrice, analysis.symbol)})</>
+                  )}
+                </p>
+              )}
+            </div>
+          )}
           {analysis.suggestedPositionSizeUsd != null && (
             <p className="text-xs text-gray-400 mt-1">
               Suggested size:{' '}

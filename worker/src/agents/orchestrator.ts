@@ -3,6 +3,7 @@ import { ChartExtractionAgent } from './extraction';
 import { TimeframeAnalysisAgent } from './timeframe';
 import { SynthesisAgent } from './synthesis';
 import { StrategyAgent } from './strategy';
+import { applySrGate, evaluateSrGate } from '../scalp/sr-gate';
 
 export class AnalysisPipelineOrchestrator {
   private extraction: ChartExtractionAgent;
@@ -31,13 +32,23 @@ export class AnalysisPipelineOrchestrator {
       req.pastLessons ?? [],
     );
 
-    // Stage 4: build trade strategy
+    // Stage 4: S/R geometry gate, then trade strategy (code enforces WAIT/SKIP)
     const latestPrice = extractions.find((e) => e.currentPrice != null)?.currentPrice ?? null;
-    const strategyResult = await this.strategy.plan(
-      synthesis,
-      req.symbol,
-      latestPrice,
-      req.portfolioContext,
+    const srSnapshot = evaluateSrGate({
+      currentPrice: latestPrice,
+      direction: synthesis.direction,
+      extractions,
+    });
+    const strategyResult = applySrGate(
+      await this.strategy.plan(
+        synthesis,
+        req.symbol,
+        latestPrice,
+        req.portfolioContext,
+        srSnapshot,
+      ),
+      srSnapshot,
+      synthesis.direction,
     );
 
     // Build tfAnalysisMap: Record<Timeframe, TimeframeAnalysis>
@@ -81,6 +92,7 @@ export class AnalysisPipelineOrchestrator {
       suggestedPositionSizePercent: strategyResult.suggestedPositionSizePercent ?? undefined,
       riskReward: strategyResult.riskReward,
       extractions,
+      srSnapshot,
       timestamp: new Date().toISOString(),
     };
   }
