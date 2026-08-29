@@ -5,7 +5,7 @@ import type {
   DroReport,
   EmaDpoReport,
 } from '../../types-polymarket';
-import { POLYMARKET_CALL_CONFIG, POLYMARKET_OUTCOME_CONFIG } from '../../types-polymarket';
+import { POLYMARKET_CALL_CONFIG, POLYMARKET_OUTCOME_CONFIG, formatPolymarketSymbolLabel } from '../../types-polymarket';
 
 function formatValue(value: unknown): string {
   if (value == null) return '—';
@@ -99,7 +99,7 @@ export function PolymarketResult({ analysis, onOutcome }: PolymarketResultProps)
         <div className="flex-1">
           <h3 className={`text-3xl font-bold ${callConfig.color}`}>{callConfig.label}</h3>
           <p className="text-gray-400 text-sm">
-            ETH/USDT &middot; {analysis.marketWindow} market &middot; {time}
+            {formatPolymarketSymbolLabel(analysis.symbol)} &middot; {analysis.marketWindow} market &middot; {time}
           </p>
         </div>
         <div className="text-right">

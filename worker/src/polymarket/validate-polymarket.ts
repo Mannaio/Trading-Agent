@@ -1,6 +1,7 @@
-import type { PolymarketMarketWindow, PolymarketRequest } from './types';
+import type { PolymarketMarketWindow, PolymarketRequest, PolymarketSymbol } from './types';
 
 const VALID_WINDOWS: PolymarketMarketWindow[] = ['5m', '15m'];
+const VALID_SYMBOLS: PolymarketSymbol[] = ['ETHUSDT', 'BTCUSD', 'BNBUSDT'];
 
 export class PolymarketValidationError extends Error {
   constructor(message: string) {
@@ -15,9 +16,10 @@ export function validatePolymarketRequest(body: unknown): PolymarketRequest {
   }
   const b = body as Record<string, unknown>;
 
-  if (b.symbol !== 'ETHUSDT') {
-    throw new PolymarketValidationError('symbol must be ETHUSDT');
+  if (typeof b.symbol !== 'string' || !VALID_SYMBOLS.includes(b.symbol as PolymarketSymbol)) {
+    throw new PolymarketValidationError(`symbol must be one of: ${VALID_SYMBOLS.join(', ')}`);
   }
+  const symbol = b.symbol as PolymarketSymbol;
 
   if (typeof b.screenshot !== 'string' || !b.screenshot.startsWith('data:image/')) {
     throw new PolymarketValidationError('screenshot must be a base64 data URL');
@@ -68,7 +70,7 @@ export function validatePolymarketRequest(body: unknown): PolymarketRequest {
   const notes = typeof b.notes === 'string' ? b.notes : undefined;
 
   return {
-    symbol: 'ETHUSDT',
+    symbol,
     screenshot: b.screenshot,
     marketWindow: b.marketWindow,
     ...(screenshotsMeta && { screenshotsMeta }),

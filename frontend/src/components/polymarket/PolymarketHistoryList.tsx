@@ -1,5 +1,5 @@
 import type { StoredPolymarketAnalysis } from '../../types-polymarket';
-import { POLYMARKET_CALL_CONFIG, POLYMARKET_OUTCOME_CONFIG } from '../../types-polymarket';
+import { POLYMARKET_CALL_CONFIG, POLYMARKET_OUTCOME_CONFIG, polymarketSymbolShort } from '../../types-polymarket';
 
 interface PolymarketHistoryListProps {
   history: StoredPolymarketAnalysis[];
@@ -53,7 +53,9 @@ export function PolymarketHistoryList({ history, onSelect, selectedId }: Polymar
               <span className="text-lg">{callCfg.emoji}</span>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-sm font-medium text-white">ETH</span>
+                  <span className="text-sm font-medium text-white">
+                    {polymarketSymbolShort(item.symbol ?? 'ETHUSDT')}
+                  </span>
                   <span className={`text-sm font-semibold ${callCfg.color}`}>{callCfg.label}</span>
                   <span className="text-xs text-gray-500">{item.marketWindow}</span>
                   <span

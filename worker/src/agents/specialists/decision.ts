@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import { callVisionJson } from '../../openai/vision-json';
 import {
   applyCorrelationGate,
   applyMarketPriceEdge,
@@ -87,7 +88,7 @@ export class DecisionAgent {
     input: PolymarketAnalysisInput,
     gateCall: PolymarketCall,
   ): Promise<{ confidence: number; reasoning: string }> {
-    const completion = await this.client.chat.completions.create({
+    const raw = await callVisionJson(this.client, 'DecisionAgent', {
       model: 'gpt-4o-mini',
       messages: [
         { role: 'system', content: this.systemPrompt(gateCall) },
@@ -98,14 +99,11 @@ export class DecisionAgent {
       response_format: { type: 'json_object' },
     });
 
-    const raw = completion.choices[0]?.message?.content;
-    if (!raw) throw new DecisionAgentError('Empty response from model');
-
     return this.parseLlmResponse(raw);
   }
 
   private systemPrompt(gateCall: PolymarketCall): string {
-    return `You are the Decision Agent for Polymarket ETH Up/Down.
+    return `You are the Decision Agent for Polymarket crypto Up/Down markets (ETH, BTC, BNB).
 The correlation gate has already determined: ${gateCall}.
 
 CORRELATION GATE (hard — already applied, do NOT override)
@@ -136,6 +134,7 @@ RESPONSE FORMAT — respond ONLY with valid JSON:
   private buildUserMessage(input: PolymarketAnalysisInput, gateCall: PolymarketCall): string {
     const { request, reports } = input;
     const lines = [
+      `Symbol: ${request.symbol}`,
       `Polymarket market window: ${request.marketWindow}`,
       `Correlation gate call: ${gateCall}`,
       '',

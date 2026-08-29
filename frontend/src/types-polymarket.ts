@@ -1,5 +1,42 @@
 export type PolymarketCall = 'UP' | 'DOWN' | 'SKIP';
 export type PolymarketMarketWindow = '5m' | '15m';
+export type PolymarketSymbol = 'ETHUSDT' | 'BTCUSD' | 'BNBUSDT';
+
+export const POLYMARKET_SYMBOL_OPTIONS: { value: PolymarketSymbol; label: string }[] = [
+  { value: 'ETHUSDT', label: 'ETH / USDT (Binance)' },
+  { value: 'BTCUSD', label: 'BTC / USD (Coinbase)' },
+  { value: 'BNBUSDT', label: 'BNB / USDT (Binance)' },
+];
+
+export function formatPolymarketSymbolLabel(symbol: PolymarketSymbol): string {
+  switch (symbol) {
+    case 'ETHUSDT':
+      return 'ETH / USDT';
+    case 'BTCUSD':
+      return 'BTC / USD';
+    case 'BNBUSDT':
+      return 'BNB / USDT';
+    default: {
+      const _exhaustive: never = symbol;
+      return _exhaustive;
+    }
+  }
+}
+
+export function polymarketSymbolShort(symbol: PolymarketSymbol): string {
+  switch (symbol) {
+    case 'ETHUSDT':
+      return 'ETH';
+    case 'BTCUSD':
+      return 'BTC';
+    case 'BNBUSDT':
+      return 'BNB';
+    default: {
+      const _exhaustive: never = symbol;
+      return _exhaustive;
+    }
+  }
+}
 
 export interface RsiReport {
   rsiValue: number | null;
@@ -51,7 +88,7 @@ export interface PolymarketMarketPrices {
 }
 
 export interface PolymarketRequest {
-  symbol: 'ETHUSDT';
+  symbol: PolymarketSymbol;
   screenshot: string;
   screenshotsMeta?: PolymarketScreenshotMeta;
   marketWindow: PolymarketMarketWindow;
@@ -92,7 +129,7 @@ export type PolymarketOutcome = 'review' | 'took' | 'skipped' | 'won' | 'lost';
 
 export interface StoredPolymarketAnalysis extends PolymarketResponse {
   id: string;
-  symbol: 'ETHUSDT';
+  symbol: PolymarketSymbol;
   notes?: string;
   marketPrices?: PolymarketMarketPrices;
   outcome: PolymarketOutcome;

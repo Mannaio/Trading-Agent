@@ -3,7 +3,9 @@ import type {
   PolymarketMarketWindow,
   PolymarketMarketPrices,
   PolymarketRequest,
+  PolymarketSymbol,
 } from '../../types-polymarket';
+import { POLYMARKET_SYMBOL_OPTIONS } from '../../types-polymarket';
 
 interface ScreenshotEntry {
   dataUrl: string;
@@ -24,6 +26,7 @@ const MARKET_WINDOW_OPTIONS: { value: PolymarketMarketWindow; label: string }[] 
 ];
 
 export function PolymarketForm({ onSubmit, isLoading }: PolymarketFormProps) {
+  const [symbol, setSymbol] = useState<PolymarketSymbol>('ETHUSDT');
   const [marketWindow, setMarketWindow] = useState<PolymarketMarketWindow>('5m');
   const [entry, setEntry] = useState<ScreenshotEntry | null>(null);
   const [upCents, setUpCents] = useState('');
@@ -34,7 +37,7 @@ export function PolymarketForm({ onSubmit, isLoading }: PolymarketFormProps) {
   const handleCapture = useCallback(async () => {
     setCapturing(true);
     try {
-      const res = await fetch('/capture/polymarket?symbol=ETHUSDT');
+      const res = await fetch(`/capture/polymarket?symbol=${symbol}`);
       if (!res.ok) {
         const data = await res.json().catch(() => ({}));
         throw new Error((data as { error?: string }).error ?? `Capture failed (${res.status})`);
@@ -61,7 +64,12 @@ export function PolymarketForm({ onSubmit, isLoading }: PolymarketFormProps) {
     } finally {
       setCapturing(false);
     }
-  }, []);
+  }, [symbol]);
+
+  const handleSymbolChange = (next: PolymarketSymbol) => {
+    setSymbol(next);
+    setEntry(null);
+  };
 
   const parseCents = (value: string): number | null => {
     if (value.trim() === '') return null;
@@ -82,7 +90,7 @@ export function PolymarketForm({ onSubmit, isLoading }: PolymarketFormProps) {
     }
 
     onSubmit({
-      symbol: 'ETHUSDT',
+      symbol,
       screenshot: entry.dataUrl,
       screenshotsMeta: {
         rsi: entry.rsi,
@@ -100,6 +108,21 @@ export function PolymarketForm({ onSubmit, isLoading }: PolymarketFormProps) {
 
   return (
     <form onSubmit={handleSubmit} className="space-y-5">
+      <div>
+        <label className="block text-sm font-medium text-gray-300 mb-1.5">Symbol</label>
+        <select
+          value={symbol}
+          onChange={(e) => handleSymbolChange(e.target.value as PolymarketSymbol)}
+          className="w-full px-4 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
+        >
+          {POLYMARKET_SYMBOL_OPTIONS.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
+        </select>
+      </div>
+
       <div>
         <label className="block text-sm font-medium text-gray-300 mb-1.5">Market window</label>
         <select

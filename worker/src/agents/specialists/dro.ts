@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import { callVisionJson } from '../../openai/vision-json';
 import type { DroReport, PolymarketRequest } from '../../polymarket/types';
 
 /**
@@ -16,16 +17,13 @@ export class DroAgent {
   async analyze(req: PolymarketRequest): Promise<DroReport> {
     const messages = this.buildMessages(req);
 
-    const completion = await this.client.chat.completions.create({
+    const raw = await callVisionJson(this.client, 'DroAgent', {
       model: 'gpt-4o',
       messages,
       temperature: 0,
       max_tokens: 1500,
       response_format: { type: 'json_object' },
     });
-
-    const raw = completion.choices[0]?.message?.content;
-    if (!raw) throw new DroAgentError('Empty response from model');
 
     return this.parseResponse(raw);
   }
@@ -43,7 +41,7 @@ export class DroAgent {
 
     userContent.push({
       type: 'text',
-      text: '5-minute ETH chart — analyze DRO dominance and DRO Alert panes:',
+      text: `5-minute ${req.symbol} chart — analyze DRO dominance and DRO Alert panes:`,
     });
     userContent.push({
       type: 'image_url',
@@ -59,7 +57,7 @@ export class DroAgent {
       });
       userContent.push({
         type: 'image_url',
-        image_url: { url: meta.droDominanceCrop, detail: 'high' },
+        image_url: { url: meta.droDominanceCrop, detail: 'low' },
       });
     }
 
@@ -70,7 +68,7 @@ export class DroAgent {
       });
       userContent.push({
         type: 'image_url',
-        image_url: { url: meta.droCrop, detail: 'high' },
+        image_url: { url: meta.droCrop, detail: 'low' },
       });
     }
 
@@ -91,7 +89,7 @@ export class DroAgent {
 
   // ─── System prompt ───
   private systemPrompt(): string {
-    return `You analyze the Detrended Rhythm Oscillator (DRO) with Alerts on a 5-minute ETH chart.
+    return `You analyze the Detrended Rhythm Oscillator (DRO) with Alerts on a 5-minute crypto chart.
 Your job is to describe DRO dominance and alert-cycle state — NOT to recommend trades or output UP/DOWN/SKIP.
 
 DOMINANCE (primary signal)

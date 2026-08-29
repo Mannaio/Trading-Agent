@@ -18,6 +18,9 @@ npm-debug.log*
 yarn-debug.log*
 pnpm-debug.log*
 
+# Brainstorm companion
+.superpowers/
+
 # Editor
 .vscode/*
 !.vscode/extensions.json
@@ -31,3 +34,6 @@ pnpm-debug.log*
 # OS
 Thumbs.db
 capture/node_modules
+
+#skills
+.agents/*

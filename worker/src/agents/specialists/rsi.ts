@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import { callVisionJson } from '../../openai/vision-json';
 import type { PolymarketRequest, RsiReport } from '../../polymarket/types';
 
 /**
@@ -16,16 +17,13 @@ export class RsiAgent {
   async analyze(req: PolymarketRequest): Promise<RsiReport> {
     const messages = this.buildMessages(req);
 
-    const completion = await this.client.chat.completions.create({
+    const raw = await callVisionJson(this.client, 'RsiAgent', {
       model: 'gpt-4o',
       messages,
       temperature: 0,
       max_tokens: 1500,
       response_format: { type: 'json_object' },
     });
-
-    const raw = completion.choices[0]?.message?.content;
-    if (!raw) throw new RsiAgentError('Empty response from model');
 
     return this.parseResponse(raw, req);
   }
@@ -43,7 +41,7 @@ export class RsiAgent {
 
     userContent.push({
       type: 'text',
-      text: '5-minute ETH chart — analyze ONLY the RSI pane:',
+      text: `5-minute ${req.symbol} chart — analyze ONLY the RSI pane:`,
     });
     userContent.push({
       type: 'image_url',
@@ -66,7 +64,7 @@ export class RsiAgent {
       });
       userContent.push({
         type: 'image_url',
-        image_url: { url: meta.rsiCrop, detail: 'high' },
+        image_url: { url: meta.rsiCrop, detail: 'low' },
       });
     }
 
@@ -87,7 +85,7 @@ export class RsiAgent {
 
   // ─── System prompt ───
   private systemPrompt(): string {
-    return `You analyze ONLY the RSI pane on a 5-minute ETH chart.
+    return `You analyze ONLY the RSI pane on a 5-minute crypto chart.
 Settings: RSI(2), close, SMA(14) smoothing. Divergence labels are OFF.
 
 Your job is to describe RSI state — NOT to recommend trades or output UP/DOWN/SKIP.

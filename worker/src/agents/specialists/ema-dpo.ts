@@ -1,4 +1,5 @@
 import OpenAI from 'openai';
+import { callVisionJson } from '../../openai/vision-json';
 import type { EmaDpoReport, PolymarketRequest } from '../../polymarket/types';
 
 /**
@@ -16,16 +17,13 @@ export class EmaDpoAgent {
   async analyze(req: PolymarketRequest): Promise<EmaDpoReport> {
     const messages = this.buildMessages(req);
 
-    const completion = await this.client.chat.completions.create({
+    const raw = await callVisionJson(this.client, 'EmaDpoAgent', {
       model: 'gpt-4o',
       messages,
       temperature: 0,
       max_tokens: 1500,
       response_format: { type: 'json_object' },
     });
-
-    const raw = completion.choices[0]?.message?.content;
-    if (!raw) throw new EmaDpoAgentError('Empty response from model');
 
     return this.parseResponse(raw);
   }
@@ -43,7 +41,7 @@ export class EmaDpoAgent {
 
     userContent.push({
       type: 'text',
-      text: '5-minute ETH chart — analyze the price pane (EMA 50/200) and DPO zig-zag swing tool if visible:',
+      text: `5-minute ${req.symbol} chart — analyze the price pane (EMA 50/200) and DPO zig-zag swing tool if visible:`,
     });
     userContent.push({
       type: 'image_url',
@@ -67,7 +65,7 @@ export class EmaDpoAgent {
 
   // ─── System prompt ───
   private systemPrompt(): string {
-    return `You analyze EMA 50/200 structure and the DPO (Detrended Price Oscillator) zig-zag swing tool on a 5-minute ETH chart.
+    return `You analyze EMA 50/200 structure and the DPO (Detrended Price Oscillator) zig-zag swing tool on a 5-minute crypto chart.
 Your job is to describe trend structure and swing-cycle context — NOT to recommend trades or pick UP/DOWN/SKIP.
 
 ROLE IN PIPELINE (final support check only)

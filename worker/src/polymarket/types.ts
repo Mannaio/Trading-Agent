@@ -1,5 +1,8 @@
 export type PolymarketCall = 'UP' | 'DOWN' | 'SKIP';
 export type PolymarketMarketWindow = '5m' | '15m';
+export type PolymarketSymbol = 'ETHUSDT' | 'BTCUSD' | 'BNBUSDT';
+
+export const POLYMARKET_SYMBOLS: PolymarketSymbol[] = ['ETHUSDT', 'BTCUSD', 'BNBUSDT'];
 
 export interface RsiReport {
   rsiValue: number | null;
@@ -51,7 +54,7 @@ export interface PolymarketMarketPrices {
 }
 
 export interface PolymarketRequest {
-  symbol: 'ETHUSDT';
+  symbol: PolymarketSymbol;
   screenshot: string;
   screenshotsMeta?: PolymarketScreenshotMeta;
   marketWindow: PolymarketMarketWindow;

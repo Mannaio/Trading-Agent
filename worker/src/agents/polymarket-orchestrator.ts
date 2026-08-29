@@ -1,5 +1,6 @@
 import type { PolymarketRequest, PolymarketResponse } from '../polymarket/types';
 import { applyCorrelationGate } from '../polymarket/decision-gate';
+import { VisionJsonError } from '../openai/vision-json';
 import { RsiAgent, RsiAgentError } from './specialists/rsi';
 import { DroAgent, DroAgentError } from './specialists/dro';
 import { EmaDpoAgent, EmaDpoAgentError } from './specialists/ema-dpo';
@@ -20,16 +21,24 @@ export class PolymarketOrchestrator {
 
   async run(req: PolymarketRequest): Promise<PolymarketResponse> {
     try {
-      const [rsi, dro, emaDpo] = await Promise.all([
-        this.rsi.analyze(req),
-        this.dro.analyze(req),
-        this.emaDpo.analyze(req),
-      ]);
+      const rsiPromise = this.rsi.analyze(req).catch((err) => {
+        throw this.wrapAgentError('RSI specialist', err);
+      });
+      const droPromise = this.dro.analyze(req).catch((err) => {
+        throw this.wrapAgentError('DRO specialist', err);
+      });
+      const emaDpoPromise = this.emaDpo.analyze(req).catch((err) => {
+        throw this.wrapAgentError('EMA+DPO specialist', err);
+      });
+
+      const [rsi, dro, emaDpo] = await Promise.all([rsiPromise, droPromise, emaDpoPromise]);
       const gateCall = applyCorrelationGate(rsi, dro);
       const decision = await this.decision.decide({
         request: req,
         reports: { rsi, dro, emaDpo },
         gateCall,
+      }).catch((err) => {
+        throw this.wrapAgentError('Decision agent', err);
       });
       return { ...decision, timestamp: new Date().toISOString() };
     } catch (err) {
@@ -44,6 +53,23 @@ export class PolymarketOrchestrator {
       }
       throw err;
     }
+  }
+
+  private wrapAgentError(stage: string, err: unknown): PolymarketPipelineError {
+    if (err instanceof PolymarketPipelineError) return err;
+    if (
+      err instanceof RsiAgentError ||
+      err instanceof DroAgentError ||
+      err instanceof EmaDpoAgentError ||
+      err instanceof DecisionAgentError ||
+      err instanceof VisionJsonError
+    ) {
+      return new PolymarketPipelineError(`${stage}: ${err.message}`);
+    }
+    if (err instanceof Error) {
+      return new PolymarketPipelineError(`${stage}: ${err.message}`);
+    }
+    return new PolymarketPipelineError(`${stage}: unknown error`);
   }
 }
 
