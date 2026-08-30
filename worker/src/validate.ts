@@ -1,6 +1,6 @@
 import type { AnalysisRequest, Symbol, TrendDirection, Timeframe, ScreenshotMeta, PortfolioContext } from './types';
 
-const VALID_SYMBOLS: Symbol[] = ['ETHUSDT', 'BTCUSDT', 'ETHBTC'];
+const VALID_SYMBOLS: Symbol[] = ['ETHUSDT', 'BTCUSDT', 'BTCUSD', 'ETHBTC'];
 const VALID_TRENDS: TrendDirection[] = ['bullish', 'bearish', 'neutral'];
 const VALID_TIMEFRAMES: Timeframe[] = ['4h', '1h', '15m'];
 const TIMEFRAMES = ['4h', '1h', '15m'] as const;

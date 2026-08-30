@@ -1,112 +1,94 @@
 import { useState, useEffect } from 'react';
-import type { StoredAnalysis, Direction } from '../../types';
+import type { StoredAnalysis, Direction, TradeSize } from '../../types';
 import { DIRECTION_CONFIG, OUTCOME_CONFIG } from '../../types';
+import { calcSpotPnL, estimateEntryFees } from '../../lib/okxFees';
+import type { PortfolioLedger } from '../../lib/portfolioLedger';
+import { TRADE_SIZES, getSizeUnit, supportsLedger, formatSizeLabel } from '../../lib/tradeSizes';
 
-/** Format price with appropriate precision based on symbol and magnitude */
 function formatPrice(value: number, symbol: string): string {
-  // ETHBTC needs high precision, no $ prefix
   if (symbol === 'ETHBTC') {
     return value.toFixed(5);
   }
-
-  // USDT pairs use $ prefix
   if (value < 100) {
     return `$${value.toFixed(2)}`;
   }
   return `$${value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
-/** Format symbol for display */
 function formatSymbol(symbol: string): string {
   if (symbol === 'ETHBTC') return 'ETH/BTC';
+  if (symbol === 'BTCUSD') return 'BTC/USD';
   return symbol.replace('USDT', '/USDT');
 }
 
-const FEE_RATE = 0.001; // 0.1% per trade
-
-/** Calculate P&L for a resolved trade */
-function calcPnL(analysis: StoredAnalysis) {
-  if (!analysis.tradeAmount || !analysis.outcomePrice) return null;
-
-  const amount = analysis.tradeAmount;
-  const entry = analysis.levels.entry;
-  const exit = analysis.outcomePrice;
-
-  // Gross P&L depends on direction
-  const gross = analysis.direction === 'HIGHER'
-    ? amount * (exit - entry)
-    : amount * (entry - exit);
-
-  // Fees: 0.1% on entry + 0.1% on exit (based on notional value)
-  const entryFee = amount * entry * FEE_RATE;
-  const exitFee = amount * exit * FEE_RATE;
-  const totalFees = entryFee + exitFee;
-
-  const net = gross - totalFees;
-
-  return { gross, totalFees, net, amount, entry, exit };
-}
-
-/** Format a currency value for P&L display */
-function formatPnL(value: number, symbol: string): string {
-  const sign = value >= 0 ? '+' : '';
-  if (symbol === 'ETHBTC') {
-    return `${sign}${value.toFixed(6)} BTC`;
+function calcUnrealizedPnL(
+  analysis: StoredAnalysis,
+  currentPrice: number,
+  btcUsdPrice: number,
+) {
+  if (!analysis.tradeSize) {
+    const entry = analysis.levels.entry;
+    const pctChange = ((currentPrice - entry) / entry) * 100;
+    const directedPct = analysis.direction === 'HIGHER' ? pctChange : -pctChange;
+    return { hasAmount: false as const, pct: directedPct };
   }
-  return `${sign}$${value.toFixed(2)}`;
-}
 
-/** Get the base asset label for the amount input */
-function assetLabel(symbol: string): string {
-  if (symbol === 'ETHBTC') return 'ETH';
-  if (symbol === 'BTCUSDT') return 'BTC';
-  return 'ETH';
-}
+  const pnl = calcSpotPnL(
+    analysis.direction,
+    analysis.tradeSize,
+    analysis.levels.entry,
+    currentPrice,
+    btcUsdPrice,
+  );
 
-/** Calculate unrealized P&L for a live trade given the current price */
-function calcUnrealizedPnL(analysis: StoredAnalysis, currentPrice: number) {
   const entry = analysis.levels.entry;
   const pctChange = ((currentPrice - entry) / entry) * 100;
   const directedPct = analysis.direction === 'HIGHER' ? pctChange : -pctChange;
 
-  if (!analysis.tradeAmount) {
-    // No amount — return percentage only
-    return { hasAmount: false as const, pct: directedPct };
-  }
-
-  const amount = analysis.tradeAmount;
-  const gross = analysis.direction === 'HIGHER'
-    ? amount * (currentPrice - entry)
-    : amount * (entry - currentPrice);
-  const entryFee = amount * entry * FEE_RATE;
-  const exitFee = amount * currentPrice * FEE_RATE;
-  const net = gross - entryFee - exitFee;
-
-  return { hasAmount: true as const, pct: directedPct, gross, net };
+  return {
+    hasAmount: true as const,
+    pct: directedPct,
+    netQuote: pnl.netQuote,
+    netBtc: pnl.netBtc,
+  };
 }
 
 interface AnalysisResultProps {
   analysis: StoredAnalysis | null;
   livePrice?: number | null;
+  ledger: PortfolioLedger;
+  btcUsdPrice: number;
   onSaveFeedback?: (id: string, feedback: string) => void;
-  onConfirmTrade?: (id: string, levels: { entry: number; stopLoss: number; takeProfit: number }, direction: Direction, tradeAmount?: number) => void;
+  onConfirmTrade?: (
+    id: string,
+    levels: { entry: number; stopLoss: number; takeProfit: number },
+    direction: Direction,
+    tradeSize: TradeSize,
+  ) => void;
   onRefuseTrade?: (id: string) => void;
   onCancelTrade?: (id: string, exitPrice: number) => void;
 }
 
-export function AnalysisResult({ analysis, livePrice, onSaveFeedback, onConfirmTrade, onRefuseTrade, onCancelTrade }: AnalysisResultProps) {
+export function AnalysisResult({
+  analysis,
+  livePrice,
+  ledger,
+  btcUsdPrice,
+  onSaveFeedback,
+  onConfirmTrade,
+  onRefuseTrade,
+  onCancelTrade,
+}: AnalysisResultProps) {
   const [feedbackDraft, setFeedbackDraft] = useState('');
   const [feedbackSaved, setFeedbackSaved] = useState(false);
 
-  // Editable levels for review mode
   const [editEntry, setEditEntry] = useState('');
   const [editStopLoss, setEditStopLoss] = useState('');
   const [editTakeProfit, setEditTakeProfit] = useState('');
-  const [editAmount, setEditAmount] = useState('');
+  const [editSize, setEditSize] = useState<TradeSize>(1);
   const [editDirection, setEditDirection] = useState<Direction>('HIGHER');
   const [levelsError, setLevelsError] = useState<string | null>(null);
 
-  // Sync editable fields when a new analysis is selected
   useEffect(() => {
     if (analysis?.levels) {
       setEditEntry(String(analysis.levels.entry));
@@ -116,8 +98,7 @@ export function AnalysisResult({ analysis, livePrice, onSaveFeedback, onConfirmT
     if (analysis?.direction) {
       setEditDirection(analysis.direction);
     }
-    // Amount always starts empty (no persist)
-    setEditAmount('');
+    setEditSize(1);
     setLevelsError(null);
   }, [analysis?.id]);
 
@@ -127,7 +108,7 @@ export function AnalysisResult({ analysis, livePrice, onSaveFeedback, onConfirmT
         <h2 className="text-lg font-semibold text-gray-300 mb-4">Prediction</h2>
         <p className="text-gray-500 text-center py-8 text-sm">
           Upload a chart screenshot or describe your setup, then click
-          "Predict 0.5% Move" to get a scalp prediction.
+          &quot;Predict 0.5% Move&quot; to get a scalp prediction.
         </p>
       </div>
     );
@@ -136,12 +117,14 @@ export function AnalysisResult({ analysis, livePrice, onSaveFeedback, onConfirmT
   const config = DIRECTION_CONFIG[analysis.direction];
   const outcomeConfig = OUTCOME_CONFIG[analysis.outcome ?? 'pending'];
   const time = new Date(analysis.timestamp).toLocaleTimeString();
+  const ledgerEnabled = supportsLedger(analysis.symbol);
+  const entryNum = parseFloat(editEntry) || analysis.levels.entry;
+  const feeEstimate = ledgerEnabled ? estimateEntryFees(editSize, entryNum) : null;
 
   return (
     <div className="bg-gray-800/50 rounded-lg p-6 border border-gray-700 space-y-5">
       <div className="flex items-center justify-between">
         <h2 className="text-lg font-semibold text-gray-300">Prediction</h2>
-        {/* Outcome Badge */}
         <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${outcomeConfig.bg} ${outcomeConfig.color} ${analysis.outcome === 'pending' ? 'animate-pulse' : ''}`}>
           {outcomeConfig.emoji} {outcomeConfig.label}
           {analysis.outcomePrice !== undefined && analysis.outcome !== 'pending' && (
@@ -150,7 +133,18 @@ export function AnalysisResult({ analysis, livePrice, onSaveFeedback, onConfirmT
         </span>
       </div>
 
-      {/* Direction + Probability */}
+      {ledgerEnabled && (
+        <div className="bg-gray-900/50 rounded-lg p-3 flex items-center justify-between text-sm">
+          <span className="text-gray-400">Portfolio (simulated)</span>
+          <span className="text-white font-semibold">
+            {ledger.balanceBtc.toFixed(6)} BTC
+            <span className="text-gray-500 font-normal ml-2 text-xs">
+              start {ledger.initialCapitalBtc} BTC
+            </span>
+          </span>
+        </div>
+      )}
+
       <div className="flex items-center gap-4">
         <span className="text-4xl">{config.emoji}</span>
         <div className="flex-1">
@@ -165,7 +159,6 @@ export function AnalysisResult({ analysis, livePrice, onSaveFeedback, onConfirmT
         </div>
       </div>
 
-      {/* Probability Bar */}
       <div>
         <div className="h-2 bg-gray-700 rounded-full overflow-hidden">
           <div
@@ -186,10 +179,8 @@ export function AnalysisResult({ analysis, livePrice, onSaveFeedback, onConfirmT
         )}
       </div>
 
-      {/* AI Reasoning — grouped by timeframe */}
       <div>
         <h4 className="text-sm font-medium text-gray-400 mb-2">AI Reasoning</h4>
-
         {analysis.analysis ? (
           <div className="space-y-2">
             {(['4h', '1h', '15m'] as const).map((tf) => {
@@ -216,7 +207,6 @@ export function AnalysisResult({ analysis, livePrice, onSaveFeedback, onConfirmT
                 </div>
               );
             })}
-
             {analysis.conclusion && (
               <div className="bg-gray-900/50 rounded-lg p-3 border border-blue-800/30">
                 <h5 className="text-xs font-semibold text-blue-400 uppercase tracking-wider mb-1">Conclusion</h5>
@@ -231,7 +221,6 @@ export function AnalysisResult({ analysis, livePrice, onSaveFeedback, onConfirmT
         )}
       </div>
 
-      {/* Thesis Feedback */}
       {analysis.thesisFeedback && (
         <div>
           <h4 className="text-sm font-medium text-gray-400 mb-1.5">Feedback on Your Thesis</h4>
@@ -241,7 +230,6 @@ export function AnalysisResult({ analysis, livePrice, onSaveFeedback, onConfirmT
         </div>
       )}
 
-      {/* Key Risk */}
       {analysis.keyRisk && (
         <div>
           <h4 className="text-sm font-medium text-gray-400 mb-1.5">Key Risk</h4>
@@ -251,7 +239,6 @@ export function AnalysisResult({ analysis, livePrice, onSaveFeedback, onConfirmT
         </div>
       )}
 
-      {/* Trade Recommendation */}
       {analysis.tradeRecommendation && (
         <div className={`rounded-lg p-4 border ${
           analysis.tradeRecommendation === 'TAKE'
@@ -277,26 +264,13 @@ export function AnalysisResult({ analysis, livePrice, onSaveFeedback, onConfirmT
           {analysis.recommendationReasoning && (
             <p className="text-sm text-gray-300">{analysis.recommendationReasoning}</p>
           )}
-          {analysis.suggestedPositionSizeUsd != null && (
-            <p className="text-xs text-gray-400 mt-1">
-              Suggested size:{' '}
-              <span className="text-white font-medium">
-                ${analysis.suggestedPositionSizeUsd.toLocaleString()}
-              </span>
-              {analysis.suggestedPositionSizePercent != null && (
-                <span> ({analysis.suggestedPositionSizePercent.toFixed(1)}% of portfolio)</span>
-              )}
-            </p>
-          )}
         </div>
       )}
 
-      {/* Trade Levels */}
       {analysis.direction !== 'UNCLEAR' && (
         <div className="space-y-3">
-          {/* Live price tracker + realtime P&L + cancel for pending trades */}
           {analysis.outcome === 'pending' && livePrice != null && (() => {
-            const unrealized = calcUnrealizedPnL(analysis, livePrice);
+            const unrealized = calcUnrealizedPnL(analysis, livePrice, btcUsdPrice);
             const isUp = unrealized.pct >= 0;
 
             return (
@@ -310,14 +284,12 @@ export function AnalysisResult({ analysis, livePrice, onSaveFeedback, onConfirmT
                     {formatPrice(livePrice, analysis.symbol)}
                   </span>
                 </div>
-
-                {/* Unrealized P&L */}
                 <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-400">Unrealized P&L</span>
+                  <span className="text-xs text-gray-400">Unrealized P&L (est.)</span>
                   <div className="text-right">
                     {unrealized.hasAmount ? (
                       <span className={`text-sm font-bold ${isUp ? 'text-emerald-400' : 'text-red-400'}`}>
-                        {formatPnL(unrealized.net, analysis.symbol)}
+                        {unrealized.netBtc >= 0 ? '+' : ''}{unrealized.netBtc.toFixed(6)} BTC
                         <span className="text-xs font-normal ml-1 opacity-75">
                           ({isUp ? '+' : ''}{unrealized.pct.toFixed(2)}%)
                         </span>
@@ -329,14 +301,8 @@ export function AnalysisResult({ analysis, livePrice, onSaveFeedback, onConfirmT
                     )}
                   </div>
                 </div>
-
-                {/* Cancel Trade button */}
                 <button
-                  onClick={() => {
-                    if (onCancelTrade) {
-                      onCancelTrade(analysis.id, livePrice);
-                    }
-                  }}
+                  onClick={() => onCancelTrade?.(analysis.id, livePrice)}
                   className="w-full py-2 bg-orange-600/80 hover:bg-orange-500 text-white text-sm font-semibold rounded-lg transition-colors cursor-pointer"
                 >
                   Cancel Trade
@@ -345,25 +311,21 @@ export function AnalysisResult({ analysis, livePrice, onSaveFeedback, onConfirmT
             );
           })()}
 
-          {/* Review mode — editable levels */}
           {analysis.outcome === 'review' ? (
             <>
               <p className="text-xs text-amber-400">
-                Review the AI levels below. Adjust if needed, then confirm or refuse.
+                Review levels, pick size, then confirm or refuse.
               </p>
 
-              {/* Direction toggle */}
               <div className="flex items-center gap-2">
                 <span className="text-[10px] text-gray-400 uppercase tracking-wider">Direction</span>
                 <button
+                  type="button"
                   onClick={() => {
                     const newDir = editDirection === 'HIGHER' ? 'LOWER' : 'HIGHER';
                     setEditDirection(newDir);
-                    // Auto-swap SL and TP when flipping direction
-                    const oldSL = editStopLoss;
-                    const oldTP = editTakeProfit;
-                    setEditStopLoss(oldTP);
-                    setEditTakeProfit(oldSL);
+                    setEditStopLoss(editTakeProfit);
+                    setEditTakeProfit(editStopLoss);
                     setLevelsError(null);
                   }}
                   className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-semibold transition-colors cursor-pointer border ${
@@ -374,11 +336,7 @@ export function AnalysisResult({ analysis, livePrice, onSaveFeedback, onConfirmT
                 >
                   {editDirection === 'HIGHER' ? '🟢' : '🔴'}
                   {editDirection}
-                  <span className="text-[10px] opacity-60 ml-1">(click to flip)</span>
                 </button>
-                {editDirection !== analysis.direction && (
-                  <span className="text-[10px] text-amber-400">overridden from {analysis.direction}</span>
-                )}
               </div>
 
               <div className="grid grid-cols-3 gap-3">
@@ -414,33 +372,50 @@ export function AnalysisResult({ analysis, livePrice, onSaveFeedback, onConfirmT
                 </div>
               </div>
 
-              {/* Trade Amount */}
-              <div className="bg-gray-900/50 rounded-lg p-3">
-                <label className="text-[10px] text-gray-400 uppercase tracking-wider mb-1 block">
-                  Amount ({assetLabel(analysis.symbol)})
-                </label>
-                <input
-                  type="number"
-                  step="any"
-                  min="0"
-                  value={editAmount}
-                  onChange={(e) => setEditAmount(e.target.value)}
-                  placeholder={`e.g. 0.2 ${assetLabel(analysis.symbol)}`}
-                  className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1.5 text-white text-sm font-semibold focus:ring-2 focus:ring-amber-500 focus:border-transparent placeholder-gray-500"
-                />
-                <p className="text-[10px] text-gray-500 mt-1">Optional — used for P&L calculation</p>
-              </div>
+              {ledgerEnabled ? (
+                <div className="bg-gray-900/50 rounded-lg p-3 space-y-2">
+                  <label className="text-[10px] text-gray-400 uppercase tracking-wider block">
+                    Size (OKX spot)
+                  </label>
+                  <select
+                    value={editSize}
+                    onChange={(e) => setEditSize(Number(e.target.value) as TradeSize)}
+                    className="w-full bg-gray-800 border border-gray-600 rounded px-2 py-1.5 text-white text-sm font-semibold focus:ring-2 focus:ring-amber-500"
+                  >
+                    {TRADE_SIZES.map((s) => (
+                      <option key={s} value={s}>
+                        {formatSizeLabel(s, analysis.symbol)}
+                      </option>
+                    ))}
+                  </select>
+                  {feeEstimate && (
+                    <p className="text-[10px] text-gray-500">
+                      Est. fees (market entry + limit exit @ entry):{' '}
+                      <span className="text-gray-300">
+                        {feeEstimate.entryFeeBase.toFixed(6)} {getSizeUnit(analysis.symbol)} + $
+                        {feeEstimate.totalFeeQuote.toFixed(2)}
+                      </span>
+                      <span className="block mt-0.5 text-gray-600">
+                        OKX EEA spot: taker 0.10% · maker 0.08%
+                      </span>
+                    </p>
+                  )}
+                </div>
+              ) : (
+                <p className="text-xs text-gray-500">
+                  OKX ledger available for BTC/USD and ETH/USDT only.
+                </p>
+              )}
 
-              {/* Validation error */}
               {levelsError && (
                 <p className="text-xs text-red-400 bg-red-900/20 border border-red-800/40 rounded-lg px-3 py-2">
                   {levelsError}
                 </p>
               )}
 
-              {/* Confirm / Refuse buttons */}
               <div className="flex gap-3">
                 <button
+                  type="button"
                   onClick={() => {
                     const entry = parseFloat(editEntry);
                     const sl = parseFloat(editStopLoss);
@@ -471,27 +446,27 @@ export function AnalysisResult({ analysis, livePrice, onSaveFeedback, onConfirmT
                       }
                     }
 
-                    setLevelsError(null);
-                    if (onConfirmTrade) {
-                      const amt = parseFloat(editAmount);
-                      onConfirmTrade(
-                        analysis.id,
-                        { entry, stopLoss: sl, takeProfit: tp },
-                        editDirection,
-                        amt > 0 ? amt : undefined,
-                      );
+                    if (!ledgerEnabled) {
+                      setLevelsError('Confirm trade requires BTC/USD or ETH/USDT.');
+                      return;
                     }
+
+                    setLevelsError(null);
+                    onConfirmTrade?.(
+                      analysis.id,
+                      { entry, stopLoss: sl, takeProfit: tp },
+                      editDirection,
+                      editSize,
+                    );
                   }}
-                  className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold rounded-lg transition-colors text-sm"
+                  disabled={!ledgerEnabled}
+                  className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:bg-gray-700 disabled:cursor-not-allowed text-white font-semibold rounded-lg transition-colors text-sm"
                 >
                   Confirm Trade
                 </button>
                 <button
-                  onClick={() => {
-                    if (onRefuseTrade) {
-                      onRefuseTrade(analysis.id);
-                    }
-                  }}
+                  type="button"
+                  onClick={() => onRefuseTrade?.(analysis.id)}
                   className="flex-1 py-2.5 bg-gray-700 hover:bg-gray-600 text-gray-300 font-semibold rounded-lg transition-colors text-sm"
                 >
                   Refuse
@@ -499,7 +474,6 @@ export function AnalysisResult({ analysis, livePrice, onSaveFeedback, onConfirmT
               </div>
             </>
           ) : (
-            /* Non-review — static levels */
             <div className="grid grid-cols-3 gap-3">
               <div className="bg-gray-900/50 rounded-lg p-3 text-center">
                 <p className="text-[10px] text-gray-400 uppercase tracking-wider mb-0.5">Entry</p>
@@ -519,93 +493,89 @@ export function AnalysisResult({ analysis, livePrice, onSaveFeedback, onConfirmT
                   {formatPrice(analysis.levels.takeProfit, analysis.symbol)}
                 </p>
               </div>
+              {analysis.tradeSize != null && (
+                <div className="col-span-3 bg-gray-900/50 rounded-lg p-3 text-center">
+                  <p className="text-[10px] text-gray-400 uppercase tracking-wider mb-0.5">Size</p>
+                  <p className="text-base font-semibold text-white">
+                    {formatSizeLabel(analysis.tradeSize, analysis.symbol)}
+                  </p>
+                </div>
+              )}
             </div>
           )}
         </div>
       )}
 
-      {/* P&L Breakdown — for resolved trades with a trade amount */}
-      {(analysis.outcome === 'won' || analysis.outcome === 'lost' || analysis.outcome === 'cancelled') && (() => {
-        const pnl = calcPnL(analysis);
-        if (!pnl) return null;
-
-        return (
-          <div className="border-t border-gray-700 pt-4">
-            <h4 className="text-sm font-medium text-gray-400 mb-2">P&L Breakdown</h4>
-            <div className="bg-gray-900/50 rounded-lg p-4 space-y-2">
-              <div className="flex justify-between text-xs text-gray-400">
-                <span>Amount</span>
-                <span className="text-gray-300">{pnl.amount} {assetLabel(analysis.symbol)}</span>
-              </div>
-              <div className="flex justify-between text-xs text-gray-400">
-                <span>Entry</span>
-                <span className="text-gray-300">{formatPrice(pnl.entry, analysis.symbol)}</span>
-              </div>
-              <div className="flex justify-between text-xs text-gray-400">
-                <span>Exit</span>
-                <span className="text-gray-300">{formatPrice(pnl.exit, analysis.symbol)}</span>
-              </div>
-              <div className="border-t border-gray-700 pt-2 flex justify-between text-xs text-gray-400">
-                <span>Gross P&L</span>
-                <span className={pnl.gross >= 0 ? 'text-emerald-400' : 'text-red-400'}>
-                  {formatPnL(pnl.gross, analysis.symbol)}
+      {(analysis.outcome === 'won' || analysis.outcome === 'lost') && analysis.ledger?.closedAt && analysis.tradeSize && analysis.outcomePrice && (
+        <div className="border-t border-gray-700 pt-4">
+          <h4 className="text-sm font-medium text-gray-400 mb-2">P&L Breakdown (OKX spot)</h4>
+          <div className="bg-gray-900/50 rounded-lg p-4 space-y-2 text-xs">
+            <div className="flex justify-between text-gray-400">
+              <span>Size</span>
+              <span className="text-gray-300">{formatSizeLabel(analysis.tradeSize, analysis.symbol)}</span>
+            </div>
+            <div className="flex justify-between text-gray-400">
+              <span>Entry / Exit</span>
+              <span className="text-gray-300">
+                {formatPrice(analysis.levels.entry, analysis.symbol)} → {formatPrice(analysis.outcomePrice, analysis.symbol)}
+              </span>
+            </div>
+            <div className="flex justify-between text-gray-400">
+              <span>Gross P&L</span>
+              <span className={analysis.ledger.grossPnlQuote! >= 0 ? 'text-emerald-400' : 'text-red-400'}>
+                {analysis.ledger.grossPnlQuote! >= 0 ? '+' : ''}${analysis.ledger.grossPnlQuote!.toFixed(2)}
+              </span>
+            </div>
+            <div className="flex justify-between text-gray-400">
+              <span>Fees (taker + maker)</span>
+              <span className="text-red-400">-${analysis.ledger.totalFeeQuote!.toFixed(2)}</span>
+            </div>
+            <div className="border-t border-gray-700 pt-2 flex justify-between text-sm font-semibold">
+              <span className="text-gray-300">Net P&L</span>
+              <span className={analysis.ledger.netPnlBtc! >= 0 ? 'text-emerald-400' : 'text-red-400'}>
+                {analysis.ledger.netPnlBtc! >= 0 ? '+' : ''}{analysis.ledger.netPnlBtc!.toFixed(6)} BTC
+                <span className="text-xs font-normal ml-1 opacity-75">
+                  (${analysis.ledger.netPnlQuote!.toFixed(2)})
                 </span>
-              </div>
-              <div className="flex justify-between text-xs text-gray-400">
-                <span>Fees (0.1% x2)</span>
-                <span className="text-red-400">
-                  -{analysis.symbol === 'ETHBTC' ? pnl.totalFees.toFixed(6) + ' BTC' : '$' + pnl.totalFees.toFixed(2)}
-                </span>
-              </div>
-              <div className="border-t border-gray-700 pt-2 flex justify-between text-sm font-semibold">
-                <span className="text-gray-300">Net P&L</span>
-                <span className={pnl.net >= 0 ? 'text-emerald-400' : 'text-red-400'}>
-                  {formatPnL(pnl.net, analysis.symbol)}
-                </span>
-              </div>
+              </span>
+            </div>
+            <div className="flex justify-between text-gray-500">
+              <span>Balance after</span>
+              <span>{analysis.ledger.balanceBtcAfter!.toFixed(6)} BTC</span>
             </div>
           </div>
-        );
-      })()}
+        </div>
+      )}
 
-      {/* Lesson Learned — feedback for lost trades */}
       {analysis.outcome === 'lost' && (
         <div className="border-t border-gray-700 pt-4">
           <h4 className="text-sm font-medium text-red-400 mb-2">Lesson Learned</h4>
           {analysis.feedback ? (
             <div className="bg-red-900/15 border border-red-800/30 rounded-lg p-4">
               <p className="text-sm text-gray-300 leading-relaxed">{analysis.feedback}</p>
-              <p className="text-[10px] text-gray-500 mt-2">This lesson will be used to improve future predictions.</p>
             </div>
           ) : (
             <div className="space-y-2">
-              <p className="text-xs text-gray-500">
-                What went wrong? Your feedback will be sent to the AI on future predictions so it learns from this mistake.
-              </p>
               <textarea
                 value={feedbackDraft}
                 onChange={(e) => { setFeedbackDraft(e.target.value); setFeedbackSaved(false); }}
-                placeholder='e.g. "Ignored the 4H overbought RSI divergence and entered too early before the 15m pullback completed."'
+                placeholder="What went wrong?"
                 rows={3}
-                className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm placeholder-gray-500 focus:ring-2 focus:ring-red-500 focus:border-transparent resize-none"
+                className="w-full px-3 py-2 bg-gray-900 border border-gray-600 rounded-lg text-white text-sm placeholder-gray-500 focus:ring-2 focus:ring-red-500 resize-none"
               />
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => {
-                    if (feedbackDraft.trim() && onSaveFeedback) {
-                      onSaveFeedback(analysis.id, feedbackDraft.trim());
-                      setFeedbackSaved(true);
-                    }
-                  }}
-                  disabled={!feedbackDraft.trim() || feedbackSaved}
-                  className="px-4 py-1.5 bg-red-600 hover:bg-red-500 disabled:bg-gray-700 disabled:cursor-not-allowed text-white text-sm font-medium rounded-lg transition-colors"
-                >
-                  {feedbackSaved ? 'Saved' : 'Save Lesson'}
-                </button>
-                {feedbackSaved && (
-                  <span className="text-xs text-emerald-400">Lesson saved — the AI will learn from this.</span>
-                )}
-              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (feedbackDraft.trim() && onSaveFeedback) {
+                    onSaveFeedback(analysis.id, feedbackDraft.trim());
+                    setFeedbackSaved(true);
+                  }
+                }}
+                disabled={!feedbackDraft.trim() || feedbackSaved}
+                className="px-4 py-1.5 bg-red-600 hover:bg-red-500 disabled:bg-gray-700 text-white text-sm font-medium rounded-lg"
+              >
+                {feedbackSaved ? 'Saved' : 'Save Lesson'}
+              </button>
             </div>
           )}
         </div>
