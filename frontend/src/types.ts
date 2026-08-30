@@ -1,5 +1,22 @@
 // ─── Symbol ───
-export type Symbol = 'ETHUSDT' | 'BTCUSDT' | 'ETHBTC';
+export type Symbol = 'ETHUSDT' | 'BTCUSDT' | 'BTCUSD' | 'ETHBTC';
+
+// ─── Trade size (OKX spot ledger) ───
+export type TradeSize = 0.5 | 1 | 2;
+
+// ─── Ledger fields on a confirmed / closed trade ───
+export interface TradeLedger {
+  entryFeeBase: number;
+  entryFeeQuote?: number;
+  exitFeeQuote?: number;
+  totalFeeQuote?: number;
+  grossPnlQuote?: number;
+  netPnlQuote?: number;
+  netPnlBtc?: number;
+  balanceBtcAfter?: number;
+  confirmedAt?: string;
+  closedAt?: string;
+}
 
 // ─── Trend Direction ───
 export type TrendDirection = 'bullish' | 'bearish' | 'neutral';
@@ -124,7 +141,8 @@ export interface StoredAnalysis extends AnalysisResponse {
   outcomePrice?: number;
   closedBy?: CloseBy;           // how the trade was closed (only set on won/lost)
   feedback?: string;            // user's lesson learned (set after lost trades)
-  tradeAmount?: number;         // asset quantity (e.g. 0.2 ETH)
+  tradeSize?: TradeSize;        // OKX spot size (0.5 / 1 / 2 BTC or ETH)
+  ledger?: TradeLedger;
 }
 
 // ─── Direction display config ───

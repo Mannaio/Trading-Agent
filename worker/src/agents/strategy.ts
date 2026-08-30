@@ -22,7 +22,7 @@ export class StrategyAgent {
   ): Promise<StrategyResult> {
     const priceRef =
       currentPrice ??
-      (symbol === 'BTCUSDT' ? 95000 : symbol === 'ETHBTC' ? 0.0265 : 2500);
+      (symbol === 'BTCUSDT' || symbol === 'BTCUSD' ? 95000 : symbol === 'ETHBTC' ? 0.0265 : 2500);
 
     const completion = await this.client.chat.completions.create({
       model: 'gpt-4o-mini',

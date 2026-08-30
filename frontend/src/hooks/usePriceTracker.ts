@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import type { StoredAnalysis, Outcome, CloseBy, Symbol } from '../types';
+import { getMarketDataSymbol } from '../lib/tradeSizes';
 
 const EXPIRY_MS = 24 * 60 * 60_000; // 24 hours
 const EXPIRY_CHECK_INTERVAL = 60_000; // check expiry every 60 seconds
@@ -133,12 +134,13 @@ async function catchUpPendingTrades(
 
   console.log(`[CatchUp] Checking ${pending.length} pending prediction(s) against historical data...`);
 
-  // Group pending trades by symbol
-  const bySymbol = new Map<string, StoredAnalysis[]>();
+  // Group pending trades by market data symbol (BTCUSD → BTCUSDT stream)
+  const bySymbol = new Map<Symbol, StoredAnalysis[]>();
   for (const p of pending) {
-    const list = bySymbol.get(p.symbol) ?? [];
+    const marketSym = getMarketDataSymbol(p.symbol);
+    const list = bySymbol.get(marketSym) ?? [];
     list.push(p);
-    bySymbol.set(p.symbol, list);
+    bySymbol.set(marketSym, list);
   }
 
   // Fetch klines for each symbol and resolve
@@ -241,17 +243,17 @@ export function usePriceTracker({ history, onUpdate }: UsePriceTrackerOptions) {
   }, [history]);
 
   // ─── Resolve pending predictions for a given symbol at a given price ───
-  function checkResolutions(symbol: Symbol, price: number) {
+  function checkResolutions(marketSymbol: Symbol, price: number) {
     const currentHistory = historyRef.current;
     const pending = currentHistory.filter(
-      (h) => h.outcome === 'pending' && h.symbol === symbol,
+      (h) => h.outcome === 'pending' && getMarketDataSymbol(h.symbol) === marketSymbol,
     );
 
     if (pending.length === 0) return;
 
     let changed = false;
     const updated = currentHistory.map((item) => {
-      if (item.outcome !== 'pending' || item.symbol !== symbol) return item;
+      if (item.outcome !== 'pending' || getMarketDataSymbol(item.symbol) !== marketSymbol) return item;
 
       const result = resolveOutcome(item, price);
       if (result) {
@@ -339,7 +341,7 @@ export function usePriceTracker({ history, onUpdate }: UsePriceTrackerOptions) {
 
       // Check if we still need this symbol before reconnecting
       const pending = historyRef.current.filter(
-        (h) => h.outcome === 'pending' && h.symbol === symbol,
+        (h) => h.outcome === 'pending' && getMarketDataSymbol(h.symbol) === symbol,
       );
       if (pending.length === 0) {
         console.log(`[PriceTracker] No pending trades for ${symbol}, not reconnecting`);
@@ -381,7 +383,9 @@ export function usePriceTracker({ history, onUpdate }: UsePriceTrackerOptions) {
   // ─── Sync WebSocket connections with pending predictions ───
   useEffect(() => {
     const pending = history.filter((h) => h.outcome === 'pending');
-    const neededSymbols = new Set(pending.map((p) => p.symbol));
+    const neededMarketSymbols = new Set(
+      pending.map((p) => getMarketDataSymbol(p.symbol)),
+    );
     const activeSymbols = new Set(socketsRef.current.keys());
 
     // Also include symbols with pending reconnect timers
@@ -390,15 +394,14 @@ export function usePriceTracker({ history, onUpdate }: UsePriceTrackerOptions) {
     }
 
     // Open sockets for new symbols
-    for (const sym of neededSymbols) {
+    for (const sym of neededMarketSymbols) {
       if (!socketsRef.current.has(sym) && !reconnectTimersRef.current.has(sym)) {
         openSocket(sym);
       }
     }
 
-    // Close sockets for symbols no longer needed
     for (const sym of activeSymbols) {
-      if (!neededSymbols.has(sym)) {
+      if (!neededMarketSymbols.has(sym)) {
         closeSocket(sym);
       }
     }
@@ -417,7 +420,7 @@ export function usePriceTracker({ history, onUpdate }: UsePriceTrackerOptions) {
         if (item.outcome !== 'pending') return item;
         const age = Date.now() - new Date(item.timestamp).getTime();
         if (age > EXPIRY_MS) {
-          const lastPrice = latestPricesRef.current[item.symbol];
+          const lastPrice = latestPricesRef.current[getMarketDataSymbol(item.symbol)];
           // No real price available yet — leave pending, let the next WS tick or kline catch-up resolve it
           if (!lastPrice) return item;
           changed = true;

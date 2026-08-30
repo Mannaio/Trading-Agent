@@ -167,6 +167,7 @@ export function AnalysisForm({
           className="w-full px-4 py-2.5 bg-gray-800 border border-gray-700 rounded-lg text-white focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all"
         >
           <option value="ETHUSDT">ETH / USDT</option>
+          <option value="BTCUSD">BTC / USD (OKX)</option>
           <option value="BTCUSDT">BTC / USDT</option>
           <option value="ETHBTC">ETH / BTC</option>
         </select>
