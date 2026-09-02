@@ -72,6 +72,7 @@ export interface SrSnapshot {
   gate: SrGateVerdict;
   triggerPrice: number | null;
   triggerCondition: string | null;
+  waitAnalysis: string | null;
 }
 
 export interface ChartExtraction {

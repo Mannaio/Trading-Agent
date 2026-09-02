@@ -69,6 +69,9 @@ export class StrategyAgent {
         `Gate: ${sr.gate}`,
         `Path clear to 0.5% TP: ${sr.pathClearToTp}`,
       );
+      if (sr.waitAnalysis) {
+        lines.push(`Wait analysis: ${sr.waitAnalysis}`);
+      }
       if (sr.blocking) {
         lines.push(
           `Blocking ${sr.blocking.kind} at ${sr.blocking.price} (${(sr.blocking.distancePct * 100).toFixed(2)}% away, ${sr.blocking.timeframe})`,
@@ -80,13 +83,13 @@ export class StrategyAgent {
         );
       }
       if (sr.triggerCondition) {
-        lines.push(`Re-entry trigger: ${sr.triggerCondition}`);
+        lines.push(`Re-check trigger (not auto-entry): ${sr.triggerCondition}`);
       }
       if (sr.gate === 'WAIT_FOR_PULLBACK' && sr.backing) {
-        lines.push(`Place limit entry at backing ${sr.backing.price}, not at market.`);
+        lines.push(`Hypothetical limit entry at backing ${sr.backing.price} only if a fresh analysis still agrees.`);
       }
-      if (sr.gate === 'WAIT_FOR_BREAK' || sr.gate === 'BLOCKED') {
-        lines.push('tradeRecommendation must be WAIT (or SKIP if the setup is otherwise invalid). Do not TAKE through the wall.');
+      if (sr.gate === 'WAIT_FOR_PULLBACK' || sr.gate === 'BLOCKED') {
+        lines.push('Do not recommend buying/selling into the wall or break-then-enter. WAIT means postpone; BLOCKED means skip.');
       }
     }
 

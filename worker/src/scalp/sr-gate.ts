@@ -13,7 +13,7 @@ import type {
 export const SCALP_TP_PCT = 0.005;
 /** Wick buffer so a wall slightly beyond TP still counts as blocking. */
 export const WICK_BUFFER_PCT = 0.0015;
-/** Both sides this close → chop; postpone for a range break. */
+/** Both sides this close → chop; no scalp in the middle. */
 export const CHOP_ZONE_PCT = 0.0035;
 /** Farther from backing than this is a chase; wait for a tap. */
 export const PULLBACK_CHASE_PCT = 0.0015;
@@ -30,10 +30,15 @@ const emptySnapshot = (): SrSnapshot => ({
   gate: 'CLEAR',
   triggerPrice: null,
   triggerCondition: null,
+  waitAnalysis: null,
 });
 
 function roundPct(v: number): number {
   return Math.round(v * 10000) / 10000;
+}
+
+function pctLabel(distancePct: number): string {
+  return `${(distancePct * 100).toFixed(2)}%`;
 }
 
 function distancePct(price: number, level: number): number {
@@ -123,14 +128,50 @@ function nearest(
   return best;
 }
 
-function breakCondition(direction: Direction, price: number): string {
-  const p = price.toString();
-  return direction === 'LOWER' ? `15m close below ${p}` : `15m close above ${p}`;
+function recheckPullback(kind: SrLevelHit['kind'], price: number): string {
+  const label = kind === 'support' ? 'support' : 'resistance';
+  return `re-analyze after a tap into ${label} at ${price}`;
 }
 
-function tapCondition(kind: SrLevelHit['kind'], price: number): string {
-  const p = price.toString();
-  return kind === 'support' ? `touch support at ${p}` : `touch resistance at ${p}`;
+function recheckRangeBreak(blocking: SrLevelHit, backing: SrLevelHit): string {
+  return `re-analyze after price leaves the range (${backing.kind} ${backing.price} – ${blocking.kind} ${blocking.price})`;
+}
+
+function buildWaitAnalysis(input: {
+  direction: Direction;
+  blocking: SrLevelHit | null;
+  backing: SrLevelHit | null;
+  pathClearToTp: boolean;
+  gate: SrGateVerdict;
+}): string | null {
+  const { direction, blocking, backing, pathClearToTp, gate } = input;
+  if (gate === 'CLEAR') return null;
+
+  const side = direction === 'HIGHER' ? 'Long' : 'Short';
+  const target = direction === 'HIGHER' ? '+0.5%' : '-0.5%';
+
+  if (gate === 'BLOCKED' && blocking && backing) {
+    return `${side} bias, but price is squeezed between ${backing.timeframe} ${backing.kind} at ${backing.price} (${pctLabel(backing.distancePct)} away) and ${blocking.timeframe} ${blocking.kind} at ${blocking.price} (${pctLabel(blocking.distancePct)} away). No clean ${target} scalp run from here — do not trade in the middle of the range.`;
+  }
+
+  if (gate === 'BLOCKED' && blocking && !backing) {
+    const wall = blocking.kind;
+    return `${side} bias, but ${blocking.timeframe} ${wall} at ${blocking.price} (${pctLabel(blocking.distancePct)} away) sits inside the ${target} path with no nearby ${direction === 'HIGHER' ? 'support' : 'resistance'} to anchor entry. Skip this run.`;
+  }
+
+  if (gate === 'WAIT_FOR_PULLBACK' && backing && blocking && !pathClearToTp) {
+    return `${side} bias, but price is advancing into ${blocking.timeframe} ${blocking.kind} at ${blocking.price} (${pctLabel(blocking.distancePct)} away) — inside the ${target} scalp path. Ideal ${direction === 'HIGHER' ? 'long' : 'short'} entry is nearer ${backing.kind} at ${backing.price}. Do not buy/sell into this wall at market; wait for a pullback to ${backing.kind}, then re-analyze before entering.`;
+  }
+
+  if (gate === 'WAIT_FOR_PULLBACK' && backing && pathClearToTp) {
+    return `${side} bias with a clear ${target} path, but price is ${pctLabel(backing.distancePct)} away from ideal ${backing.kind} at ${backing.price}. Wait for a tap into that level before entering — do not chase.`;
+  }
+
+  if (gate === 'WAIT_FOR_BREAK' && blocking) {
+    return `${side} bias, but structure must resolve first. Do not enter on a break-through — re-analyze only after the range clears.`;
+  }
+
+  return null;
 }
 
 export function evaluateSrGate(input: {
@@ -168,20 +209,28 @@ export function evaluateSrGate(input: {
     backing.distancePct < CHOP_ZONE_PCT;
 
   if (inChop) {
-    gate = 'WAIT_FOR_BREAK';
+    gate = 'BLOCKED';
     triggerPrice = blocking.price;
-    triggerCondition = breakCondition(direction, blocking.price);
+    triggerCondition = recheckRangeBreak(blocking, backing);
   } else if (!pathClearToTp && blocking) {
-    gate = 'WAIT_FOR_BREAK';
-    triggerPrice = blocking.price;
-    triggerCondition = breakCondition(direction, blocking.price);
+    if (backing) {
+      gate = 'WAIT_FOR_PULLBACK';
+      triggerPrice = backing.price;
+      triggerCondition = recheckPullback(backing.kind, backing.price);
+    } else {
+      gate = 'BLOCKED';
+      triggerPrice = blocking.price;
+      triggerCondition = `re-analyze if structure changes at ${blocking.kind} ${blocking.price}`;
+    }
   } else if (backing != null && backing.distancePct > PULLBACK_CHASE_PCT) {
     gate = 'WAIT_FOR_PULLBACK';
     triggerPrice = backing.price;
-    triggerCondition = tapCondition(backing.kind, backing.price);
+    triggerCondition = recheckPullback(backing.kind, backing.price);
   }
 
-  return { blocking, backing, pathClearToTp, gate, triggerPrice, triggerCondition };
+  const waitAnalysis = buildWaitAnalysis({ direction, blocking, backing, pathClearToTp, gate });
+
+  return { blocking, backing, pathClearToTp, gate, triggerPrice, triggerCondition, waitAnalysis };
 }
 
 function minSep(entry: number): number {
@@ -209,23 +258,6 @@ function snapPullbackLevels(result: StrategyResult, snapshot: SrSnapshot, direct
   };
 }
 
-function gateReason(snapshot: SrSnapshot): string {
-  switch (snapshot.gate) {
-    case 'WAIT_FOR_BREAK':
-      return snapshot.triggerCondition
-        ? `S/R gate: wait for ${snapshot.triggerCondition} before entering the 0.5% scalp.`
-        : 'S/R gate: wait for a break of the nearby wall before entering.';
-    case 'WAIT_FOR_PULLBACK':
-      return snapshot.triggerCondition
-        ? `S/R gate: postpone chase — ${snapshot.triggerCondition}, then enter.`
-        : 'S/R gate: postpone until price tags backing support/resistance.';
-    case 'BLOCKED':
-      return 'S/R gate: 0.5% path is structurally blocked — skip.';
-    default:
-      return '';
-  }
-}
-
 /**
  * Code-side enforcement so the strategy model cannot TAKE through a nearby wall.
  * Never upgrades SKIP → TAKE/WAIT. Snaps entry to backing on WAIT_FOR_PULLBACK.
@@ -236,21 +268,23 @@ export function applySrGate(
   direction: Direction,
 ): StrategyResult {
   const withLevels = snapPullbackLevels(result, snapshot, direction);
-  const reason = gateReason(snapshot);
 
-  if (snapshot.gate === 'CLEAR' || !reason) return withLevels;
+  if (snapshot.gate === 'CLEAR' || !snapshot.waitAnalysis) return withLevels;
+
+  const reason = snapshot.waitAnalysis;
+  const recheck = snapshot.triggerCondition ? ` Re-check: ${snapshot.triggerCondition}.` : '';
 
   if (result.tradeRecommendation === 'SKIP' || snapshot.gate === 'BLOCKED') {
     return {
       ...withLevels,
       tradeRecommendation: 'SKIP',
-      recommendationReasoning: [reason, withLevels.recommendationReasoning].filter(Boolean).join(' '),
+      recommendationReasoning: [reason + recheck, withLevels.recommendationReasoning].filter(Boolean).join(' '),
     };
   }
 
   return {
     ...withLevels,
     tradeRecommendation: 'WAIT',
-    recommendationReasoning: [reason, withLevels.recommendationReasoning].filter(Boolean).join(' '),
+    recommendationReasoning: [reason + recheck, withLevels.recommendationReasoning].filter(Boolean).join(' '),
   };
 }

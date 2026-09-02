@@ -277,6 +277,11 @@ export function AnalysisResult({ analysis, livePrice, onSaveFeedback, onConfirmT
           {analysis.recommendationReasoning && (
             <p className="text-sm text-gray-300">{analysis.recommendationReasoning}</p>
           )}
+          {analysis.srSnapshot?.waitAnalysis && (
+            <p className="text-sm text-yellow-100/90 mt-2 leading-relaxed border-t border-yellow-700/40 pt-2">
+              {analysis.srSnapshot.waitAnalysis}
+            </p>
+          )}
           {analysis.srSnapshot && (
             <div className="mt-3 space-y-1 text-xs text-gray-400">
               <p>
@@ -288,23 +293,23 @@ export function AnalysisResult({ analysis, livePrice, onSaveFeedback, onConfirmT
               </p>
               {analysis.srSnapshot.blocking && (
                 <p>
-                  Blocking {analysis.srSnapshot.blocking.kind} at{' '}
+                  Into {analysis.srSnapshot.blocking.kind} at{' '}
                   <span className="text-white">{formatPrice(analysis.srSnapshot.blocking.price, analysis.symbol)}</span>
                   {' '}({(analysis.srSnapshot.blocking.distancePct * 100).toFixed(2)}%, {analysis.srSnapshot.blocking.timeframe})
                 </p>
               )}
               {analysis.srSnapshot.backing && (
                 <p>
-                  Backing {analysis.srSnapshot.backing.kind} at{' '}
+                  Ideal {analysis.srSnapshot.backing.kind} at{' '}
                   <span className="text-white">{formatPrice(analysis.srSnapshot.backing.price, analysis.symbol)}</span>
                   {' '}({(analysis.srSnapshot.backing.distancePct * 100).toFixed(2)}%, {analysis.srSnapshot.backing.timeframe})
                 </p>
               )}
               {analysis.srSnapshot.triggerCondition && (
                 <p className="text-yellow-300">
-                  Re-enter when {analysis.srSnapshot.triggerCondition}
-                  {analysis.srSnapshot.triggerPrice != null && (
-                    <> ({formatPrice(analysis.srSnapshot.triggerPrice, analysis.symbol)})</>
+                  Re-check when {analysis.srSnapshot.triggerCondition}
+                  {analysis.srSnapshot.triggerPrice != null && analysis.srSnapshot.gate === 'WAIT_FOR_PULLBACK' && (
+                    <> (near {formatPrice(analysis.srSnapshot.triggerPrice, analysis.symbol)})</>
                   )}
                 </p>
               )}

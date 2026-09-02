@@ -63,7 +63,10 @@ export interface SrSnapshot {
   pathClearToTp: boolean;
   gate: SrGateVerdict;
   triggerPrice: number | null;
+  /** What to watch before re-running analysis — not an automatic entry signal. */
   triggerCondition: string | null;
+  /** Plain-language geometry: approaching wall, ideal backing level, why not to enter now. */
+  waitAnalysis: string | null;
 }
 
 export interface ChartExtraction {

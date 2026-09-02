@@ -66,6 +66,7 @@ describe('evaluateSrGate', () => {
     expect(snap.gate).toBe('CLEAR');
     expect(snap.pathClearToTp).toBe(true);
     expect(snap.blocking).toBeNull();
+    expect(snap.waitAnalysis).toBeNull();
   });
 
   it('is CLEAR when direction is UNCLEAR', () => {
@@ -81,8 +82,8 @@ describe('evaluateSrGate', () => {
     expect(snap.gate).toBe('CLEAR');
   });
 
-  it('WAIT_FOR_BREAK when resistance sits inside the 0.5% long path', () => {
-    const wall = 2500 * 1.003; // 0.3% above
+  it('BLOCKED when resistance blocks the long path with no backing support', () => {
+    const wall = 2500 * 1.003;
     const snap = evaluateSrGate({
       currentPrice: 2500,
       direction: 'HIGHER',
@@ -92,15 +93,40 @@ describe('evaluateSrGate', () => {
         }),
       ],
     });
-    expect(snap.gate).toBe('WAIT_FOR_BREAK');
+    expect(snap.gate).toBe('BLOCKED');
     expect(snap.pathClearToTp).toBe(false);
-    expect(snap.blocking?.price).toBe(wall);
-    expect(snap.triggerPrice).toBe(wall);
-    expect(snap.triggerCondition).toContain('15m close above');
+    expect(snap.waitAnalysis).toContain('inside the +0.5% path');
+    expect(snap.waitAnalysis).toContain('Skip this run');
+  });
+
+  it('WAIT_FOR_PULLBACK when advancing into resistance with backing support below', () => {
+    const wall = 2507.5;
+    const floor = 2490;
+    const snap = evaluateSrGate({
+      currentPrice: 2500,
+      direction: 'HIGHER',
+      extractions: [
+        baseExtraction({
+          srLevels: [
+            level({ price: wall, kind: 'resistance' }),
+            level({ price: floor, kind: 'support' }),
+          ],
+        }),
+      ],
+    });
+    expect(snap.gate).toBe('WAIT_FOR_PULLBACK');
+    expect(snap.pathClearToTp).toBe(false);
+    expect(snap.backing?.price).toBe(floor);
+    expect(snap.waitAnalysis).toContain('advancing into');
+    expect(snap.waitAnalysis).toContain('2507.5');
+    expect(snap.waitAnalysis).toContain('2490');
+    expect(snap.waitAnalysis).toContain('Do not buy/sell into this wall');
+    expect(snap.triggerCondition).toContain('re-analyze after a tap into support at 2490');
+    expect(snap.triggerCondition).not.toContain('close above');
   });
 
   it('CLEAR when resistance is beyond the 0.5% path', () => {
-    const wall = 2500 * 1.008; // 0.8% above
+    const wall = 2500 * 1.008;
     const snap = evaluateSrGate({
       currentPrice: 2500,
       direction: 'HIGHER',
@@ -114,8 +140,8 @@ describe('evaluateSrGate', () => {
     expect(snap.pathClearToTp).toBe(true);
   });
 
-  it('WAIT_FOR_BREAK when support sits inside the 0.5% short path', () => {
-    const floor = 2500 * 0.997; // 0.3% below
+  it('BLOCKED when support blocks the short path with no backing resistance', () => {
+    const floor = 2500 * 0.997;
     const snap = evaluateSrGate({
       currentPrice: 2500,
       direction: 'LOWER',
@@ -125,20 +151,20 @@ describe('evaluateSrGate', () => {
         }),
       ],
     });
-    expect(snap.gate).toBe('WAIT_FOR_BREAK');
+    expect(snap.gate).toBe('BLOCKED');
     expect(snap.pathClearToTp).toBe(false);
-    expect(snap.triggerCondition).toContain('15m close below');
+    expect(snap.waitAnalysis).toContain('-0.5%');
   });
 
-  it('WAIT_FOR_PULLBACK when long is chasing far from backing support', () => {
+  it('WAIT_FOR_PULLBACK when long is chasing far from backing support with clear path', () => {
     const snap = evaluateSrGate({
       currentPrice: 2500,
       direction: 'HIGHER',
       extractions: [
         baseExtraction({
           srLevels: [
-            level({ price: 2490, kind: 'support' }), // 0.4% below
-            level({ price: 2525, kind: 'resistance' }), // 1% above — path clear
+            level({ price: 2490, kind: 'support' }),
+            level({ price: 2525, kind: 'resistance' }),
           ],
         }),
       ],
@@ -146,10 +172,11 @@ describe('evaluateSrGate', () => {
     expect(snap.gate).toBe('WAIT_FOR_PULLBACK');
     expect(snap.pathClearToTp).toBe(true);
     expect(snap.backing?.price).toBe(2490);
-    expect(snap.triggerCondition).toContain('touch support');
+    expect(snap.waitAnalysis).toContain('do not chase');
+    expect(snap.triggerCondition).toContain('re-analyze after a tap into support at 2490');
   });
 
-  it('WAIT_FOR_BREAK (chop) when both walls are inside 0.35%', () => {
+  it('BLOCKED (chop) when both walls are inside 0.35%', () => {
     const snap = evaluateSrGate({
       currentPrice: 2500,
       direction: 'HIGHER',
@@ -162,8 +189,9 @@ describe('evaluateSrGate', () => {
         }),
       ],
     });
-    expect(snap.gate).toBe('WAIT_FOR_BREAK');
-    expect(snap.triggerPrice).toBe(2504);
+    expect(snap.gate).toBe('BLOCKED');
+    expect(snap.waitAnalysis).toContain('squeezed between');
+    expect(snap.triggerCondition).toContain('re-analyze after price leaves the range');
   });
 
   it('CLEAR when sitting on nearby support with a clear path to TP', () => {
@@ -173,7 +201,7 @@ describe('evaluateSrGate', () => {
       extractions: [
         baseExtraction({
           srLevels: [
-            level({ price: 2498, kind: 'support' }), // 0.08% below
+            level({ price: 2498, kind: 'support' }),
             level({ price: 2520, kind: 'resistance' }),
           ],
         }),
@@ -185,7 +213,26 @@ describe('evaluateSrGate', () => {
 });
 
 describe('applySrGate', () => {
-  it('downgrades TAKE to WAIT on WAIT_FOR_BREAK and keeps SKIP', () => {
+  it('downgrades TAKE to WAIT when approaching resistance with backing', () => {
+    const snap = evaluateSrGate({
+      currentPrice: 2500,
+      direction: 'HIGHER',
+      extractions: [
+        baseExtraction({
+          srLevels: [
+            level({ price: 2507.5, kind: 'resistance' }),
+            level({ price: 2490, kind: 'support' }),
+          ],
+        }),
+      ],
+    });
+    const gated = applySrGate(strategy(), snap, 'HIGHER');
+    expect(gated.tradeRecommendation).toBe('WAIT');
+    expect(gated.recommendationReasoning).toContain('advancing into');
+    expect(gated.recommendationReasoning).not.toContain('close above');
+  });
+
+  it('forces SKIP when gate is BLOCKED', () => {
     const snap = evaluateSrGate({
       currentPrice: 2500,
       direction: 'HIGHER',
@@ -195,10 +242,7 @@ describe('applySrGate', () => {
         }),
       ],
     });
-    expect(applySrGate(strategy(), snap, 'HIGHER').tradeRecommendation).toBe('WAIT');
-    expect(
-      applySrGate(strategy({ tradeRecommendation: 'SKIP' }), snap, 'HIGHER').tradeRecommendation,
-    ).toBe('SKIP');
+    expect(applySrGate(strategy(), snap, 'HIGHER').tradeRecommendation).toBe('SKIP');
   });
 
   it('snaps entry to backing on WAIT_FOR_PULLBACK', () => {
@@ -218,15 +262,5 @@ describe('applySrGate', () => {
     expect(gated.tradeRecommendation).toBe('WAIT');
     expect(gated.entry).toBe(2490);
     expect(gated.takeProfit).toBeCloseTo(2490 * 1.005, 5);
-  });
-
-  it('forces SKIP when gate is BLOCKED', () => {
-    const blocked = evaluateSrGate({
-      currentPrice: 2500,
-      direction: 'HIGHER',
-      extractions: [baseExtraction({})],
-    });
-    blocked.gate = 'BLOCKED';
-    expect(applySrGate(strategy(), blocked, 'HIGHER').tradeRecommendation).toBe('SKIP');
   });
 });
