@@ -41,6 +41,40 @@ export interface Indicators {
 
 // ─── Agent 1 output: raw extracted data per chart ───
 // SYNC: keep in sync with worker/src/types.ts
+export type SrKind = 'support' | 'resistance';
+export type SrSource = 'swing' | 'ema50' | 'ema200' | 'round' | 'drawn';
+export type SrStrength = 'weak' | 'medium' | 'strong';
+export type SrGateVerdict = 'CLEAR' | 'WAIT_FOR_BREAK' | 'WAIT_FOR_PULLBACK' | 'BLOCKED';
+
+export interface SrLevel {
+  price: number;
+  kind: SrKind;
+  source: SrSource;
+  timeframe: Timeframe;
+  touches: number | null;
+  strength: SrStrength;
+  extractionConfidence: 'high' | 'medium' | 'low';
+}
+
+export interface SrLevelHit {
+  price: number;
+  kind: SrKind;
+  timeframe: Timeframe;
+  distancePct: number;
+  source: SrSource;
+  strength: SrStrength;
+}
+
+export interface SrSnapshot {
+  blocking: SrLevelHit | null;
+  backing: SrLevelHit | null;
+  pathClearToTp: boolean;
+  gate: SrGateVerdict;
+  triggerPrice: number | null;
+  triggerCondition: string | null;
+  waitAnalysis: string | null;
+}
+
 export interface ChartExtraction {
   timeframe: Timeframe;
   ema50: number | null;
@@ -54,6 +88,7 @@ export interface ChartExtraction {
   } | null;
   currentPrice: number | null;
   extractionConfidence: 'high' | 'medium' | 'low';
+  srLevels?: SrLevel[];
 }
 
 // ─── Portfolio context sent by frontend ───
@@ -111,6 +146,7 @@ export interface AnalysisResponse {
   suggestedPositionSizePercent?: number;
   riskReward?: number;
   extractions?: ChartExtraction[];
+  srSnapshot?: SrSnapshot;
 }
 
 // ─── Stored analysis (persisted in localStorage) ───

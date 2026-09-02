@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import type { PortfolioContext, StrategyResult, SynthesisResult, Symbol } from '../types';
+import type { PortfolioContext, SrSnapshot, StrategyResult, SynthesisResult, Symbol } from '../types';
 
 /**
  * StrategyAgent — Agent 4 in the multi-agent trading pipeline.
@@ -19,6 +19,7 @@ export class StrategyAgent {
     symbol: Symbol,
     currentPrice: number | null,
     portfolioContext?: PortfolioContext,
+    srSnapshot?: SrSnapshot,
   ): Promise<StrategyResult> {
     const priceRef =
       currentPrice ??
@@ -28,7 +29,7 @@ export class StrategyAgent {
       model: 'gpt-4o-mini',
       messages: [
         { role: 'system', content: this.systemPrompt() },
-        { role: 'user', content: this.buildUserMessage(synthesis, symbol, priceRef, portfolioContext) },
+        { role: 'user', content: this.buildUserMessage(synthesis, symbol, priceRef, portfolioContext, srSnapshot) },
       ],
       temperature: 0.1,
       max_tokens: 600,
@@ -47,6 +48,7 @@ export class StrategyAgent {
     symbol: Symbol,
     priceRef: number,
     p?: PortfolioContext,
+    sr?: SrSnapshot,
   ): string {
     const lines: string[] = [
       'SYNTHESIS RESULT:',
@@ -59,6 +61,37 @@ export class StrategyAgent {
       `Symbol: ${symbol}`,
       `Current price: ${priceRef}`,
     ];
+
+    if (sr) {
+      lines.push(
+        '',
+        'S/R GATE (deterministic — do not override the gate verdict):',
+        `Gate: ${sr.gate}`,
+        `Path clear to 0.5% TP: ${sr.pathClearToTp}`,
+      );
+      if (sr.waitAnalysis) {
+        lines.push(`Wait analysis: ${sr.waitAnalysis}`);
+      }
+      if (sr.blocking) {
+        lines.push(
+          `Blocking ${sr.blocking.kind} at ${sr.blocking.price} (${(sr.blocking.distancePct * 100).toFixed(2)}% away, ${sr.blocking.timeframe})`,
+        );
+      }
+      if (sr.backing) {
+        lines.push(
+          `Backing ${sr.backing.kind} at ${sr.backing.price} (${(sr.backing.distancePct * 100).toFixed(2)}% away, ${sr.backing.timeframe})`,
+        );
+      }
+      if (sr.triggerCondition) {
+        lines.push(`Re-check trigger (not auto-entry): ${sr.triggerCondition}`);
+      }
+      if (sr.gate === 'WAIT_FOR_PULLBACK' && sr.backing) {
+        lines.push(`Hypothetical limit entry at backing ${sr.backing.price} only if a fresh analysis still agrees.`);
+      }
+      if (sr.gate === 'WAIT_FOR_PULLBACK' || sr.gate === 'BLOCKED') {
+        lines.push('Do not recommend buying/selling into the wall or break-then-enter. WAIT means postpone; BLOCKED means skip.');
+      }
+    }
 
     if (p && p.portfolioSizeUsd > 0) {
       const prob = s.probability;
@@ -104,7 +137,8 @@ ETHBTC PRECISION
 TRADE RECOMMENDATION
 - "TAKE": probability ≥ 65% AND R:R ≥ 1.0 AND (no portfolio context provided OR historical band win rate ≥ 50% OR overall win rate ≥ 50%).
 - "SKIP": probability < 60% OR direction is UNCLEAR OR (portfolio context is provided AND historical band win rate for this probability band < 40%).
-- "WAIT": everything else — marginal setup (probability 60–65%, R:R slightly below 1.0, or a losing streak).
+- "WAIT": everything else — marginal setup (probability 60–65%, R:R slightly below 1.0, or a losing streak), OR the S/R gate is WAIT_FOR_BREAK / WAIT_FOR_PULLBACK.
+- If an S/R GATE block is present, obey it: never TAKE when the gate is WAIT_FOR_BREAK, WAIT_FOR_PULLBACK, or BLOCKED.
 
 POSITION SIZING (only when portfolio size is provided)
 - maxRisk$ = portfolioSizeUsd × (maxRiskPerTradePercent / 100)

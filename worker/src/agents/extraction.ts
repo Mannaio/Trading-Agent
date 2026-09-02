@@ -1,5 +1,5 @@
 import OpenAI from 'openai';
-import type { AnalysisRequest, ChartExtraction, Timeframe } from '../types';
+import type { AnalysisRequest, ChartExtraction, SrLevel, Timeframe } from '../types';
 
 /**
  * ChartExtractionAgent — Agent 1 in the multi-agent pipeline.
@@ -134,6 +134,15 @@ CURRENT PRICE (currentPrice)
 Read the last candle's close price or the price scale value at the rightmost bar.
 Return null if not readable.
 
+SUPPORT / RESISTANCE (srLevels)
+Extract at most 5 nearby levels per chart — only structure that matters for a 0.5% scalp.
+Include: obvious swing highs/lows, labeled horizontals, round numbers that are drawn, and clearly marked S/R.
+Do NOT invent levels. Omit a level if the price is not readable from the scale or a label.
+Prefer levels closest to currentPrice. Ignore structure farther than ~2% on 15m/1H, ~1% on 4H.
+kind: "support" if price is currently above the level, "resistance" if below. If price is sitting on it, use the role it would play (wick lows → support, wick highs → resistance).
+source: "swing" | "ema50" | "ema200" | "round" | "drawn"
+If none are readable, return [].
+
 EXTRACTION CONFIDENCE
 "high" — all key values (EMA, RSI, DRO direction, currentPrice) are readable.
 "medium" — 1–2 key values are uncertain or null.
@@ -154,7 +163,16 @@ RESPONSE FORMAT — respond ONLY with valid JSON:
         "barsSincePivot": <number or null>
       },
       "currentPrice": <number or null>,
-      "extractionConfidence": "high" | "medium" | "low"
+      "extractionConfidence": "high" | "medium" | "low",
+      "srLevels": [
+        {
+          "price": <number>,
+          "kind": "support" | "resistance",
+          "source": "swing" | "ema50" | "ema200" | "round" | "drawn",
+          "touches": <number or null>,
+          "strength": "weak" | "medium" | "strong"
+        }
+      ]
     }
   ]
 }
@@ -188,8 +206,9 @@ Return one object per chart in the order they were provided. If the entire DRO b
       const currentPrice = this.nullableNumber(c.currentPrice);
       const extractionConfidence = this.resolveConfidence(c.extractionConfidence);
       const dro = this.parseDro(c.dro);
+      const srLevels = this.parseSrLevels(c.srLevels, timeframe);
 
-      results.push({ timeframe, ema50, ema200, rsi, dro, currentPrice, extractionConfidence });
+      results.push({ timeframe, ema50, ema200, rsi, dro, currentPrice, extractionConfidence, srLevels });
     }
 
     return results;
@@ -239,6 +258,44 @@ Return one object per chart in the order they were provided. If the entire DRO b
   private nullableBoolean(v: unknown): boolean | null {
     if (typeof v === 'boolean') return v;
     return null;
+  }
+
+  private parseSrLevels(v: unknown, timeframe: Timeframe): SrLevel[] {
+    if (!Array.isArray(v)) return [];
+    const kinds: SrLevel['kind'][] = ['support', 'resistance'];
+    const sources: SrLevel['source'][] = ['swing', 'ema50', 'ema200', 'round', 'drawn'];
+    const strengths: SrLevel['strength'][] = ['weak', 'medium', 'strong'];
+    const out: SrLevel[] = [];
+
+    for (const item of v) {
+      if (!item || typeof item !== 'object') continue;
+      const row = item as Record<string, unknown>;
+      const price = this.nullableNumber(row.price);
+      if (price == null || price <= 0) continue;
+      if (!kinds.includes(row.kind as SrLevel['kind'])) continue;
+      const source = sources.includes(row.source as SrLevel['source'])
+        ? (row.source as SrLevel['source'])
+        : 'swing';
+      const strength = strengths.includes(row.strength as SrLevel['strength'])
+        ? (row.strength as SrLevel['strength'])
+        : 'medium';
+      const touches =
+        typeof row.touches === 'number' && Number.isFinite(row.touches)
+          ? Math.round(row.touches)
+          : null;
+      out.push({
+        price,
+        kind: row.kind as SrLevel['kind'],
+        source,
+        timeframe,
+        touches,
+        strength,
+        extractionConfidence: this.resolveConfidence(row.extractionConfidence),
+      });
+      if (out.length >= 5) break;
+    }
+
+    return out;
   }
 }
 
