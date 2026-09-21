@@ -70,7 +70,7 @@ export class RsiAgent {
 
     const contextLines = [
       `Symbol: ${req.symbol}`,
-      `Polymarket market window: ${req.marketWindow}`,
+      `Chart interval: ${req.marketWindow}`,
     ];
     if (req.notes?.trim()) {
       contextLines.push(`User notes: ${req.notes.trim()}`);
@@ -90,12 +90,9 @@ Settings: RSI(2), close, SMA(14) smoothing. Divergence labels are OFF.
 
 Your job is to describe RSI state — NOT to recommend trades or output UP/DOWN/SKIP.
 
-CORRELATION CONTEXT (describe only — Decision Agent applies the gate)
-The user's manual edge pairs RSI extremes with DRO dominance color:
-- "peak" (overbought spike) + green DRO dominance → fade-DOWN setup context (expect mean reversion lower)
-- "trough" (oversold dip) + red DRO dominance → fade-UP setup context (expect mean reversion higher)
-You do NOT know DRO dominance — describe RSI extremes precisely so Decision can correlate.
-When extreme is "peak" or "trough", mention in marginNotes how clearly the spike/trough reads for correlation.
+CORRELATION CONTEXT (describe only)
+Describe RSI extremes precisely (peak / trough / none) so a later step can pair them with DRO dominance color.
+When extreme is "peak" or "trough", mention in marginNotes how clearly the spike/trough reads.
 
 ZONE (visual thresholds ~30 / 70 for RSI 2)
 - "oversold": RSI line near or below the lower band (~30 or below)
@@ -132,8 +129,7 @@ roomConfidence: 0–100 integer — how confident you are in the roomToMove asse
 marginNotes: brief notes on band proximity, fill color, or margin to next band.
 caveats: array of strings listing any readability issues or ambiguities.
 
-Do NOT recommend UP, DOWN, or SKIP.
-Do NOT output trade calls or Polymarket directions.
+Do not give financial advice.
 
 RESPONSE FORMAT — respond ONLY with valid JSON:
 {

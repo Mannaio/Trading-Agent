@@ -13,6 +13,10 @@ export class VisionJsonError extends Error {
   }
 }
 
+export function isVisionRefusal(err: unknown): boolean {
+  return err instanceof VisionJsonError && err.message.includes('refusal=');
+}
+
 /**
  * Calls a vision/chat completion expecting JSON content, with retries on empty responses.
  */
@@ -34,6 +38,10 @@ export async function callVisionJson(
 
     lastFinish = choice?.finish_reason ?? 'unknown';
     lastRefusal = choice?.message?.refusal ?? null;
+
+    if (lastRefusal) {
+      break;
+    }
 
     if (attempt < retries) {
       console.warn(
