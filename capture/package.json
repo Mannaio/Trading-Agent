@@ -5,15 +5,19 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/server.ts",
-    "start": "tsx src/server.ts"
+    "start": "tsx src/server.ts",
+    "test": "tsx --test src/*.test.ts",
+    "watch:polymarket": "tsx src/watch-polymarket.ts"
   },
   "dependencies": {
     "express": "^5.2.1",
+    "nodemailer": "^7.0.6",
     "playwright": "^1.60.0"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
     "@types/node": "^25.5.0",
+    "@types/nodemailer": "^6.4.19",
     "tsx": "^4.21.0",
     "typescript": "^6.0.2"
   }

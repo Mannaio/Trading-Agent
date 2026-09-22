@@ -1,5 +1,5 @@
 // ─── Symbol ───
-export type Symbol = 'ETHUSDT' | 'BTCUSDT' | 'ETHBTC';
+export type Symbol = 'ETHUSDT' | 'BTCUSDT' | 'BTCUSD' | 'ETHBTC';
 
 // ─── Trend Direction ───
 export type TrendDirection = 'bullish' | 'bearish' | 'neutral';
