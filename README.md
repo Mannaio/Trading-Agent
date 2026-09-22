@@ -97,6 +97,24 @@ The frontend proxies `/api/*` to the worker at `localhost:8787`.
 
 > Debug Chrome launches with extensions disabled (`--disable-extensions`) so CDP capture stays reliable. You can keep the app and TradingView in the same debug Chrome window.
 
+## Polymarket watch (email on UP/DOWN)
+
+Replays the Polymarket form on a timer: capture the 5m chart, `POST /api/polymarket/analyze`, email only when the call is **UP** or **DOWN** and confidence is **80% or higher**. SKIP, errors, and weaker calls stay in the terminal.
+
+1. Leave debug Chrome + TradingView, the capture server, and the worker running (frontend is not required).
+2. Copy env and add a Gmail app password:
+   ```bash
+   cd capture
+   cp env.example .env
+   # edit .env → ALERT_TO, SMTP_USER, SMTP_PASS
+   # optional: SYMBOL=BTCUSD, INTERVAL_MS=300000, MIN_CONFIDENCE=80
+   ```
+3. Smoke-test one run, then leave the loop up:
+   ```bash
+   npm run watch:polymarket -- --once
+   npm run watch:polymarket
+   ```
+
 ## API
 
 ### POST /api/analyze
