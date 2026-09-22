@@ -1,57 +1,6 @@
 import OpenAI from 'openai';
-import { callVisionJson, isVisionRefusal } from '../../openai/vision-json';
+import { callVisionJson } from '../../openai/vision-json';
 import type { DroReport, PolymarketRequest } from '../../polymarket/types';
-
-export function droSystemPrompt(): string {
-  return `You describe the Detrended Rhythm Oscillator (DRO) with Alerts on a 5-minute crypto chart.
-Report only what is visible in the DRO panes. Do not give financial advice.
-
-DOMINANCE (primary read)
-Lookback: rolling last 70 minutes (1h 10m, ~14 bars on 5m). lookbackWindow must always be "last_70_minutes".
-
-Dominance color = the color of the LATEST green or red stretch touching the LIVE EDGE (rightmost bar) of the DRO dominance pane.
-- "green": latest stretch at the live edge is green
-- "red": latest stretch at the live edge is red
-- "unclear": dominance pane unreadable or ambiguous
-
-WHAT DOMINANCE IS NOT
-Dominance color is the cycle/regime tint in the DRO pane background bands — it does NOT mean all 5m candles are green or red.
-Do NOT infer dominance from candle colors on the price chart. Read only the DRO dominance pane background.
-
-Do NOT use majority vote across the 70-minute lookback. Only the stretch at the live edge counts.
-If dominance flipped recently (fresh flip), report the new color immediately and set dominanceSinceBars to how many 5m bars the current stretch has been active (count from the flip bar). Use null if unreadable.
-
-DRO ALERT (secondary — zigzag pane)
-Read the DRO Alert zigzag for cycle context:
-- pivotDirection: "LOW" if the most recent pivot is a low, "HIGH" if a high, "unclear" if unreadable
-- mean: numeric mean value shown in the alert pane, or null if unreadable
-- barsSincePivot: bars since the most recent pivot, or null if unreadable
-
-notes: brief notes on dominance flip timing, stretch length, alert-cycle alignment, or readability issues.
-
-RESPONSE FORMAT — respond ONLY with valid JSON:
-{
-  "dominanceColor": "green" | "red" | "unclear",
-  "dominanceSinceBars": <integer or null>,
-  "lookbackWindow": "last_70_minutes",
-  "alertCycle": {
-    "pivotDirection": "LOW" | "HIGH" | "unclear",
-    "mean": <number or null>,
-    "barsSincePivot": <integer or null>
-  },
-  "notes": "<string>"
-}`;
-}
-
-export function unclearDroReport(notes: string): DroReport {
-  return {
-    dominanceColor: 'unclear',
-    dominanceSinceBars: null,
-    lookbackWindow: 'last_70_minutes',
-    alertCycle: { pivotDirection: 'unclear', mean: null, barsSincePivot: null },
-    notes,
-  };
-}
 
 /**
  * DroAgent — DRO specialist in the Polymarket pipeline.
@@ -68,23 +17,15 @@ export class DroAgent {
   async analyze(req: PolymarketRequest): Promise<DroReport> {
     const messages = this.buildMessages(req);
 
-    try {
-      const raw = await callVisionJson(this.client, 'DroAgent', {
-        model: 'gpt-4o',
-        messages,
-        temperature: 0,
-        max_tokens: 1500,
-        response_format: { type: 'json_object' },
-      });
-      return this.parseResponse(raw);
-    } catch (err) {
-      if (isVisionRefusal(err)) {
-        return unclearDroReport(
-          'Vision model refused the DRO pane read; treating dominance as unclear.',
-        );
-      }
-      throw err;
-    }
+    const raw = await callVisionJson(this.client, 'DroAgent', {
+      model: 'gpt-4o',
+      messages,
+      temperature: 0,
+      max_tokens: 1500,
+      response_format: { type: 'json_object' },
+    });
+
+    return this.parseResponse(raw);
   }
 
   // ─── Build multi-modal messages ───
@@ -93,7 +34,7 @@ export class DroAgent {
   ): OpenAI.Chat.Completions.ChatCompletionMessageParam[] {
     const system: OpenAI.Chat.Completions.ChatCompletionSystemMessageParam = {
       role: 'system',
-      content: droSystemPrompt(),
+      content: this.systemPrompt(),
     };
 
     const userContent: OpenAI.Chat.Completions.ChatCompletionContentPart[] = [];
@@ -133,7 +74,7 @@ export class DroAgent {
 
     const contextLines = [
       `Symbol: ${req.symbol}`,
-      `Chart interval: ${req.marketWindow}`,
+      `Polymarket market window: ${req.marketWindow}`,
     ];
     if (req.notes?.trim()) {
       contextLines.push(`User notes: ${req.notes.trim()}`);
@@ -144,6 +85,56 @@ export class DroAgent {
     });
 
     return [system, { role: 'user', content: userContent }];
+  }
+
+  // ─── System prompt ───
+  private systemPrompt(): string {
+    return `You analyze the Detrended Rhythm Oscillator (DRO) with Alerts on a 5-minute crypto chart.
+Your job is to describe DRO dominance and alert-cycle state — NOT to recommend trades or output UP/DOWN/SKIP.
+
+DOMINANCE (primary signal)
+Lookback: rolling last 70 minutes (1h 10m, ~14 bars on 5m). lookbackWindow must always be "last_70_minutes".
+
+Dominance color = the color of the LATEST green or red stretch touching the LIVE EDGE (rightmost bar) of the DRO dominance pane.
+- "green": latest stretch at the live edge is green
+- "red": latest stretch at the live edge is red
+- "unclear": dominance pane unreadable or ambiguous
+
+WHAT DOMINANCE IS NOT
+Dominance color is the cycle/regime tint in the DRO pane background bands — it does NOT mean all 5m candles are green or red.
+Do NOT infer dominance from candle colors on the price chart. Read only the DRO dominance pane background.
+
+Do NOT use majority vote across the 70-minute lookback. Only the stretch at the live edge counts.
+If dominance flipped recently (fresh flip), report the new color immediately and set dominanceSinceBars to how many 5m bars the current stretch has been active (count from the flip bar). Use null if unreadable.
+
+CORRELATION CONTEXT (describe only — Decision Agent applies the gate)
+- Green dominance + RSI peak → fade-DOWN setup context
+- Red dominance + RSI trough → fade-UP setup context
+You do NOT know RSI state — report dominance color precisely so Decision can correlate.
+
+DRO ALERT (secondary — zigzag pane)
+Read the DRO Alert zigzag for cycle context:
+- pivotDirection: "LOW" if the most recent pivot is a low, "HIGH" if a high, "unclear" if unreadable
+- mean: numeric mean value shown in the alert pane, or null if unreadable
+- barsSincePivot: bars since the most recent pivot, or null if unreadable
+
+notes: brief notes on dominance flip timing, stretch length, alert-cycle alignment, or readability issues.
+
+Do NOT recommend UP, DOWN, or SKIP.
+Do NOT output trade calls or Polymarket directions.
+
+RESPONSE FORMAT — respond ONLY with valid JSON:
+{
+  "dominanceColor": "green" | "red" | "unclear",
+  "dominanceSinceBars": <integer or null>,
+  "lookbackWindow": "last_70_minutes",
+  "alertCycle": {
+    "pivotDirection": "LOW" | "HIGH" | "unclear",
+    "mean": <number or null>,
+    "barsSincePivot": <integer or null>
+  },
+  "notes": "<string>"
+}`;
   }
 
   // ─── Parse JSON response ───

@@ -50,7 +50,7 @@ export class EmaDpoAgent {
 
     const contextLines = [
       `Symbol: ${req.symbol}`,
-      `Chart interval: ${req.marketWindow}`,
+      `Polymarket market window: ${req.marketWindow}`,
     ];
     if (req.notes?.trim()) {
       contextLines.push(`User notes: ${req.notes.trim()}`);
@@ -66,7 +66,7 @@ export class EmaDpoAgent {
   // ─── System prompt ───
   private systemPrompt(): string {
     return `You analyze EMA 50/200 structure and the DPO (Detrended Price Oscillator) zig-zag swing tool on a 5-minute crypto chart.
-Your job is to describe trend structure and swing-cycle context. Do not give financial advice.
+Your job is to describe trend structure and swing-cycle context — NOT to recommend trades or pick UP/DOWN/SKIP.
 
 ROLE IN PIPELINE (final support check only)
 RSI + DRO correlation is the primary signal. You are the FINAL soft support/veto check after that gate.
@@ -107,7 +107,8 @@ This does NOT output UP or DOWN — it flags alignment quality for the Decision 
 
 notes: brief notes on EMA curvature, extension risk, DPO swing readability, or alignment rationale.
 
-Do not give financial advice.
+Do NOT recommend UP, DOWN, or SKIP.
+Do NOT output trade calls or Polymarket directions.
 
 RESPONSE FORMAT — respond ONLY with valid JSON:
 {
